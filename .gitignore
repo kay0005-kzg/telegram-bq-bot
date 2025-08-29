@@ -1,0 +1,28 @@
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*.log
+.venv/
+venv/
+.env
+.python-version
+.ipynb_checkpoints/
+.pytest_cache/
+
+# Credentials / keys
+*.pem
+*.key
+*.p12
+*.json
+secrets*/ 
+*.sqlite
+
+# Build / misc
+dist/
+build/

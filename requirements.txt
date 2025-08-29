@@ -1,0 +1,5 @@
+python-telegram-bot==20.7
+google-cloud-bigquery==3.25.0
+google-auth==2.34.0
+tzdata==2024.1           # ensures timezones work on all OSes
+yfinance
