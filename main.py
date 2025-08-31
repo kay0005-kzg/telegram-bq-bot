@@ -1,6 +1,6 @@
 import os
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
 from collections import defaultdict
 from html import escape
@@ -10,7 +10,6 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-import yfinance as yf
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -30,124 +29,7 @@ bq_client = bigquery.Client(project=BQ_PROJECT, location=BQ_LOCATION)
 logging.basicConfig(level=logging.INFO, force=True)
 logger = logging.getLogger(__name__)
 
-# ---------------- FX helpers (yfinance) ----------------
-# Country -> currency used in your SQL mapping
-CCY_BY_COUNTRY = {
-    "TH": "THB",
-    "PH": "PHP",
-    "BD": "BDT",
-    "PK": "PKR",
-    "ID": "IDR",
-    "US": "USD",
-}
-
-def _yf_last_close_asof(ticker: str, cutoff_date) -> float | None:
-    """
-    Return the last available Close for `ticker` up to and including `cutoff_date` (date object).
-    Uses daily bars. Returns None if nothing available.
-    """
-    start = cutoff_date - timedelta(days=10)  # small buffer window
-    end = cutoff_date + timedelta(days=1)     # yfinance end is exclusive
-
-    try:
-        hist = yf.Ticker(ticker).history(start=start, end=end, interval="1d", auto_adjust=False)
-        if hist.empty:
-            return None
-        # Filter rows up to cutoff_date (index is pandas DatetimeIndex in UTC)
-        hist = hist[hist.index.date <= cutoff_date]
-        if hist.empty:
-            return None
-        return float(hist["Close"].iloc[-1])
-    except Exception as e:
-        logger.warning(f"yfinance history failed for {ticker}: {e}")
-        return None
-
-def _yf_usd_per_unit(ccy: str, cutoff_date) -> float | None:
-    """
-    Get USD per 1 unit of `ccy` (e.g., THB -> USD/THB) as of `cutoff_date`.
-    Tries direct pair 'CCYUSD=X'; falls back to inverting 'USDCCY=X'.
-    Returns None if neither is available.
-    """
-    if ccy == "USD":
-        return 1.0
-
-    # Try direct: CCYUSD=X  (e.g., THBUSD=X -> USD per 1 THB)
-    direct = f"{ccy}USD=X"
-    rate = _yf_last_close_asof(direct, cutoff_date)
-    if rate and rate > 0:
-        return rate
-
-    # Fallback: invert USDCCY=X (e.g., USDTHB=X -> THB per 1 USD)
-    inverse = f"USD{ccy}=X"
-    inv_rate = _yf_last_close_asof(inverse, cutoff_date)
-    if inv_rate and inv_rate > 0:
-        return 1.0 / inv_rate
-
-    return None
-
-def fetch_yf_rates_asof_cutoff(needed_ccys, cutoff_ts_local):
-    """
-    Build a dict {"THB": usd_per_unit, ...} for currencies needed.
-    cutoff_ts_local is tz-aware in Asia/Ho_Chi_Minh; we use its DATE component.
-    """
-    cutoff_date = cutoff_ts_local.date()
-    rates = {}
-    for ccy in sorted(set(needed_ccys) | {"USD"}):
-        r = _yf_usd_per_unit(ccy, cutoff_date)
-        if r is None:
-            logger.warning(f"No FX rate found for {ccy} as of {cutoff_date}; defaulting to 1.0")
-            r = 1.0
-        rates[ccy] = float(r)
-    return rates
-
-def convert_rows_to_usd(rows, fx_rates):
-    """
-    Takes aggregated rows (country, method, totals/avg in native),
-    adds USD fields and recomputes % of total (USD) within each country.
-    Expects row keys: country, total_deposit_amount, average_deposit_amount, method, etc.
-    """
-    # Precompute conversion rate per country
-    country_to_rate = {}
-    countries = {(r.get("country") or "") for r in rows}
-    for country in countries:
-        ccy = CCY_BY_COUNTRY.get(country)
-        rate = fx_rates.get(ccy, 1.0) if ccy else 1.0
-        country_to_rate[country] = rate
-
-    # Total USD per country (denominator)
-    country_totals_usd = {}
-    for r in rows:
-        ctry = r.get("country") or ""
-        rate = country_to_rate.get(ctry, 1.0)
-        total_native = float(r.get("total_deposit_amount", 0) or 0)
-        country_totals_usd[ctry] = country_totals_usd.get(ctry, 0.0) + (total_native * rate)
-
-    # Add USD fields & USD-based % of total
-    out = []
-    for r in rows:
-        r2 = dict(r)
-        ctry = r.get("country") or ""
-        rate = country_to_rate.get(ctry, 1.0)
-
-        total_native = float(r.get("total_deposit_amount", 0) or 0)
-        avg_native   = float(r.get("average_deposit_amount", 0) or 0)
-
-        total_usd = round(total_native * rate)
-        avg_usd   = round(avg_native * rate)
-
-        r2["total_deposit_amount_usd"] = total_usd
-        r2["average_deposit_amount_usd"] = avg_usd
-
-        denom = country_totals_usd.get(ctry, 0.0)
-        if denom > 0:
-            r2["pct_of_country_total_usd"] = f"{round((total_usd * 100.0) / denom, 2)}%"
-        else:
-            r2["pct_of_country_total_usd"] = ""
-
-        out.append(r2)
-    return out
-
-# ---------------- Helpers ----------------
+# ---------------- Helpers (render) ----------------
 def _format_int(x):
     try:
         return f"{int(float(x)):,}"
@@ -159,9 +41,6 @@ def _render_country_table_text(rows_for_country) -> str:
     headers = [
         "Channel Name",
         "Deposit Counts",
-        "Deposit Volume",
-        "Average Deposit",
-        "% of Total Volume",
         "Deposit Volume (USD)",
         "Average Deposit (USD)",
         "% of Total Volume (USD)",
@@ -172,15 +51,12 @@ def _render_country_table_text(rows_for_country) -> str:
         data.append([
             (r.get("method") or ""),
             _format_int(r.get("deposit_tnx_count", 0)),
-            _format_int(r.get("total_deposit_amount", 0)),
-            _format_int(r.get("average_deposit_amount", 0)),
-            (r.get("pct_of_country_total") or ""),
             _format_int(r.get("total_deposit_amount_usd", 0)),
             _format_int(r.get("average_deposit_amount_usd", 0)),
             (r.get("pct_of_country_total_usd") or ""),
         ])
 
-    cols = list(zip(*([headers] + data)))
+    cols = list(zip(*([headers] + data))) if data else [headers]
     widths = [max(len(str(cell)) for cell in col) for col in cols]
 
     def _line(cells):
@@ -193,6 +69,7 @@ def _render_country_table_text(rows_for_country) -> str:
         lines.append(_line(row))
 
     return "\n".join(lines)
+
 
 def build_country_sections(all_rows):
     """Return list of (title_html, table_text_plain)."""
@@ -321,23 +198,12 @@ async def dist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # ---- Fetch FX rates from yfinance as-of cutoff (GMT+7 date) & convert ----
-        needed_ccys = [CCY_BY_COUNTRY.get(r.get("country") or "", "USD") for r in rows]
-        fx_rates = fetch_yf_rates_asof_cutoff(needed_ccys, cutoff_ts)
-        rows = convert_rows_to_usd(rows, fx_rates)
-
-        # Build conversion rate text for header
-        rate_lines = []
-        for ccy in sorted(set(needed_ccys)):
-            rate_val = fx_rates.get(ccy, 1.0)
-            rate_lines.append(f"1 {ccy} = {rate_val:.4f} USD")
-        fx_text = "\n".join(rate_lines)
+        # ---------------- No FX conversion here: USD fields come from BigQuery ----------------
 
         # Header (HTML)
         header_html = (
             f"<b>Summarized deposit volume for deposit channels up till "
-            f"{escape(cutoff_ts.strftime('%Y-%m-%d %H:%M:%S'))}</b>\n\n"
-            f"<i>FX rates as of {escape(str(cutoff_ts.date()))}:</i>\n{escape(fx_text)}"
+            f"{escape(cutoff_ts.strftime('%Y-%m-%d %H:%M:%S'))}</b>"
         )
 
         # Build sections and send
