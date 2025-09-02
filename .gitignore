@@ -22,7 +22,9 @@ venv/
 *.json
 secrets*/ 
 *.sqlite
+.ssh
 
 # Build / misc
 dist/
 build/
+

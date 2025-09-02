@@ -1,233 +1,248 @@
 import os
 import logging
-from datetime import datetime
-from zoneinfo import ZoneInfo
-from collections import defaultdict
-from html import escape
-
-from google.cloud import bigquery
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-
 from dotenv import load_dotenv
 
+from bot.config import Config
+from bot.bq_client import BigQueryClient
+from bot.table_renderer import send_apf_tables, send_channel_distribution, send_dpf_tables
+
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+# Load environment variables
 load_dotenv()
 
-# ---------------- Config ----------------
-TELEGRAM_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-BQ_PROJECT = os.environ.get("BQ_PROJECT")
-BQ_LOCATION = os.environ.get("BQ_LOCATION", "asia-southeast1")
-
-ALLOWED_COUNTRIES = {"TH", "PH", "BD", "PK", "ID"}
-
-with open("deposit_report.sql", "r", encoding="utf-8") as f:
-    SQL_TEXT = f.read()
-
-bq_client = bigquery.Client(project=BQ_PROJECT, location=BQ_LOCATION)
-
-logging.basicConfig(level=logging.INFO, force=True)
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    force=True
+)
 logger = logging.getLogger(__name__)
 
-# ---------------- Helpers (render) ----------------
-def _format_int(x):
-    try:
-        return f"{int(float(x)):,}"
-    except Exception:
-        return str(x)
+def _parse_target_date(date_str: str):
+    """Parse YYYYMMDD -> 'YYYY-MM-DD' string; raise on invalid."""
+    dt = datetime.strptime(date_str, "%Y%m%d")  # will raise ValueError if bad
+    return dt.strftime("%Y-%m-%d")
 
-def _render_country_table_text(rows_for_country) -> str:
-    """Return plain text table (no HTML); caller wraps with <pre> and escapes it."""
-    headers = [
-        "Channel Name",
-        "Deposit Counts",
-        "Deposit Volume (USD)",
-        "Average Deposit (USD)",
-        "% of Total Volume (USD)",
+def get_date_range_header():
+    """Get the current time and date range for the header."""
+    now_bkk = datetime.now(ZoneInfo("Asia/Bangkok"))
+    current_time = now_bkk.strftime("%H:%M")
+    current_date = now_bkk.strftime("%Y-%m-%d")
+    
+    dates = [
+        current_date,
+        (now_bkk - timedelta(days=1)).strftime("%Y-%m-%d"),
+        (now_bkk - timedelta(days=2)).strftime("%Y-%m-%d")
     ]
+    return current_time, dates
 
-    data = []
-    for r in rows_for_country:
-        data.append([
-            (r.get("method") or ""),
-            _format_int(r.get("deposit_tnx_count", 0)),
-            _format_int(r.get("total_deposit_amount_usd", 0)),
-            _format_int(r.get("average_deposit_amount_usd", 0)),
-            (r.get("pct_of_country_total_usd") or ""),
-        ])
+class RealTimeBot:
+    def __init__(self):
+        self.config = Config()
+        self.bq_client = BigQueryClient(self.config)
+        
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        msg = """🤖 **Realtime Report Bot**
 
-    cols = list(zip(*([headers] + data))) if data else [headers]
-    widths = [max(len(str(cell)) for cell in col) for col in cols]
+*Deposit Channel Distribution* (Specific date)
+• `/dist a <YYYYMMDD>`: Distribution for all countries
+• `/dist <COUNTRY> <YYYYMMDD>`: Distribution for one country (e.g., `/dist TH 20250901`)
 
-    def _line(cells):
-        return "  ".join(str(cells[i]).ljust(widths[i]) for i in range(len(headers)))
+*Acquisition Performance* (Rolling 3 days)
+• `/apf a`: Acquisition data for all countries
+• `/apf <COUNTRY>`: Data for a specific country (e.g., `/apf TH`)
 
-    lines = []
-    lines.append(_line(headers))
-    lines.append("  ".join("-" * w for w in widths))
-    for row in data:
-        lines.append(_line(row))
+*Deposit Performance* (Rolling 3 days)
+• `/dpf a`: Deposit data for all countries
+• `/dpf <COUNTRY>`: Data for a specific country (e.g., `/dpf PH`)
 
-    return "\n".join(lines)
+*📍 Supported Countries:* TH, PH, BD, PK, ID
 
+*ℹ️ Data Scope:*
+• *Timezone:* Asia/Bangkok (UTC+7)
+• *Update Frequency:* Near real-time"""
+        await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
 
-def build_country_sections(all_rows):
-    """Return list of (title_html, table_text_plain)."""
-    groups = defaultdict(list)
-    for r in all_rows:
-        groups[r.get("country") or ""].append(r)
-
-    sections = []
-    for country in sorted(groups.keys()):
-        title_html = f"<b>{escape(country)}</b>\n\n" if country else ""
-        table_text = _render_country_table_text(groups[country])
-        sections.append((title_html, table_text))
-    return sections
-
-async def send_sections_html(reply_fn, sections, header_html=""):
-    """
-    Send each (title_html, table_text) section as one or more HTML messages,
-    wrapping table_text in <pre> with proper escaping. Avoid splitting inside tags.
-    """
-    MAX = 3900  # safety margin under Telegram's ~4096 hard limit
-
-    if header_html:
-        await reply_fn(header_html)
-
-    for (title_html, table_text) in sections:
-        # try to fit in one message first
-        block = title_html + "<pre>" + escape(table_text) + "</pre>"
-        if len(block) <= MAX:
-            await reply_fn(block)
-            continue
-
-        # otherwise split by lines and send multiple <pre> blocks
-        lines = table_text.splitlines()
-        cur_lines = []
-        cur_len = len(title_html) + len("<pre></pre>")  # constant overhead
-
-        for ln in lines:
-            ln_len = len(ln) + 1  # include newline
-            if cur_len + ln_len > MAX:
-                # flush current
-                piece = "\n".join(cur_lines)
-                await reply_fn(title_html + "<pre>" + escape(piece) + "</pre>")
-                # next chunks won't repeat the title
-                title_html = ""
-                cur_lines, cur_len = [ln], len("<pre></pre>") + ln_len
-            else:
-                cur_lines.append(ln)
-                cur_len += ln_len
-
-        if cur_lines:
-            piece = "\n".join(cur_lines)
-            await reply_fn(title_html + "<pre>" + escape(piece) + "</pre>")
-
-# ---------------- Commands ----------------
-async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = (
-        "Usage:\n"
-        "<code>/dist a &lt;YYYYMMDD&gt;</code> → Show ALL countries\n"
-        "<code>/dist &lt;COUNTRY&gt; &lt;YYYYMMDD&gt;</code> → Show ONE country (TH, PH, BD, PK, ID)\n\n"
-        "Examples:\n"
-        "<code>/dist a 20250821</code>\n"
-        "<code>/dist BD 20250821</code>\n\n"
-        "Cutoff time is the moment you send the command (your local time)."
-    )
-    await update.message.reply_text(msg, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
-
-async def dist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        # Validate args
-        if len(context.args) < 2:
-            await update.message.reply_text(
-                "Usage: <code>/dist a &lt;YYYYMMDD&gt;</code> or <code>/dist &lt;COUNTRY&gt; &lt;YYYYMMDD&gt;</code>",
-                parse_mode=ParseMode.HTML,
-                disable_web_page_preview=True,
-            )
-            return
-
-        selector = context.args[0].upper()  # "A" for all, or country code
-        date_str = context.args[1]           # YYYYMMDD
-
-        # Parse date
+    async def apf_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
-            date_obj = datetime.strptime(date_str, "%Y%m%d")
-        except ValueError:
-            await update.message.reply_text(
-                "❌ Invalid date format. Use <code>YYYYMMDD</code> (e.g., <code>20250821</code>).",
-                parse_mode=ParseMode.HTML,
-            )
-            return
-
-        # Cutoff = that date at current local time (Asia/Ho_Chi_Minh)
-        now_local = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh"))
-        cutoff_ts = datetime.combine(date_obj.date(), now_local.time(), tzinfo=ZoneInfo("Asia/Ho_Chi_Minh"))
-
-        # Country filter
-        if selector == "A":
-            selected_country_value = None
-            target_label = "all countries"
-        else:
-            if selector not in ALLOWED_COUNTRIES:
-                await update.message.reply_text(
-                    f"❌ Unsupported country <code>{escape(selector)}</code>. "
-                    f"Allowed: {', '.join(sorted(ALLOWED_COUNTRIES))}",
-                    parse_mode=ParseMode.HTML,
+            if not context.args:
+                return await update.message.reply_text(
+                    "Please type the correct function: `/apf a` or `/apf <COUNTRY>` (TH, PH, BD, PK, ID)",
+                    parse_mode=ParseMode.MARKDOWN,
                 )
-                return
-            selected_country_value = selector
-            target_label = selector
 
-        # Build query with BOTH params present every time
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("cutoff_ts", "TIMESTAMP", cutoff_ts.isoformat()),
-                bigquery.ScalarQueryParameter("selected_country", "STRING", selected_country_value),
-            ]
-        )
+            sel = context.args[0].upper().strip()
+            if sel == "A":
+                selected_country = None
+                scope_label = "all countries"
+            else:
+                if sel not in self.config.APF_ALLOWED:
+                    return await update.message.reply_text(
+                        f"❌ Unsupported country `{sel}`. Allowed: {', '.join(sorted(self.config.APF_ALLOWED))}"
+                    )
+                selected_country = sel
+                scope_label = sel
 
-        # Run query
-        query_job = bq_client.query(SQL_TEXT, job_config=job_config)
-        rows = [dict(r.items()) for r in query_job.result()]
+            rows = await self.bq_client.execute_apf_query(selected_country)
+            if not rows:
+                return await update.message.reply_text(f"No data for {scope_label}.")
 
-        if not rows:
+            country_groups = {}
+            for row in rows:
+                country = row.get("country", "Unknown")
+                if country not in country_groups:
+                    country_groups[country] = []
+                country_groups[country].append(row)
+
+            current_time, date_range = get_date_range_header()
+            header_text = (
+                f"📊 *Acquisition Summary* \n"
+                f"⏰ Daily Data Cutoff: Data up to {current_time} (BKK) for each day \n"
+                f"📅 Date range: {date_range[2]} → {date_range[0]}"
+            )
+            await update.message.reply_text(header_text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
+
+            await send_apf_tables(update, country_groups, max_width=52)
+
+        except Exception as e:
+            logger.exception("Error in /apf")
             await update.message.reply_text(
-                f"No results for {escape(target_label)} up till {escape(cutoff_ts.isoformat())}",
-                parse_mode=ParseMode.HTML,
-            )
-            return
-
-        # ---------------- No FX conversion here: USD fields come from BigQuery ----------------
-
-        # Header (HTML)
-        header_html = (
-            f"<b>Summarized deposit volume for deposit channels up till "
-            f"{escape(cutoff_ts.strftime('%Y-%m-%d %H:%M:%S'))}</b>"
-        )
-
-        # Build sections and send
-        sections = build_country_sections(rows)
-
-        async def _reply(msg_html: str):
-            return await update.message.reply_text(
-                msg_html, parse_mode=ParseMode.HTML, disable_web_page_preview=True
+                f"Error: `{e}`\nLocation: {self.config.BQ_LOCATION}", 
+                parse_mode=ParseMode.MARKDOWN
             )
 
-        await send_sections_html(_reply, sections, header_html=header_html)
+    async def dist_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        /dist: exact-date distribution in NATIVE currency.
+        Usage:
+          /dist a 20250901
+          /dist TH 20250901
+        """
+        try:
+            if len(context.args) < 2:
+                return await update.message.reply_text(
+                    "Usage: `/dist a <YYYYMMDD>` or `/dist <COUNTRY> <YYYYMMDD>`",
+                    parse_mode=ParseMode.MARKDOWN
+                )
 
-    except Exception as e:
-        logger.exception("Error in /dist")
-        await update.message.reply_text(
-            f"<b>Error:</b> <code>{escape(str(e))}</code>\n\nLocation: {escape(BQ_LOCATION)}",
-            parse_mode=ParseMode.HTML,
-        )
+            selector = context.args[0].upper().strip()
+            date_str = context.args[1].strip()
 
-def main():
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler(["help", "start"], help_cmd))
-    app.add_handler(CommandHandler("dist", dist_cmd))
-    app.run_polling(poll_interval=2.0, timeout=50)
+            # Parse target date
+            try:
+                target_date = _parse_target_date(date_str)  # 'YYYY-MM-DD'
+            except ValueError:
+                return await update.message.reply_text(
+                    "❌ Invalid date format. Use `YYYYMMDD` (e.g., `20250901`).",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+
+            # Country filter
+            if selector == "A":
+                selected_country_value = None
+                target_label = "all countries"
+            else:
+                if selector not in self.config.APF_ALLOWED:
+                    return await update.message.reply_text(
+                        f"❌ Unsupported country `{selector}`. "
+                        f"Allowed: {', '.join(sorted(self.config.APF_ALLOWED))}",
+                        parse_mode=ParseMode.MARKDOWN
+                    )
+                selected_country_value = selector
+                target_label = selector
+
+            # Query BQ: exact date + native currency
+            rows = await self.bq_client.execute_dist_query(target_date, selected_country_value)
+
+            if not rows:
+                return await update.message.reply_text(
+                    f"No results for {target_label} on {target_date}.",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+
+            # Group rows by country
+            country_groups: dict[str, list[dict]] = {}
+            for r in rows:
+                c = (r.get("country") or "") or "Unknown"
+                country_groups.setdefault(c, []).append(r)
+
+            # Header
+            header_text = (
+                f"📊 *Deposit Channel Distribution* \n"
+                f"⏰ Date: {target_date}\n"
+            )
+            await update.message.reply_text(header_text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
+
+            # Render (table_renderer handles native currency keys)
+            await send_channel_distribution(update, country_groups, max_width=72)
+
+        except Exception as e:
+            logging.exception("Error in /dist")
+            await update.message.reply_text(
+                f"Error: `{e}`\nLocation: {self.config.BQ_LOCATION}",
+                parse_mode=ParseMode.MARKDOWN
+            )
+
+    async def dpf_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        try:
+            if not context.args:
+                return await update.message.reply_text(
+                    "Usage: `/dpf a` or `/dpf <COUNTRY>` (TH, PH, BD, PK, ID)",
+                    parse_mode=ParseMode.MARKDOWN,
+                )
+
+            sel = context.args[0].upper().strip()
+            if sel == "A":
+                selected_country = None
+                scope_label = "all countries"
+            else:
+                if sel not in self.config.APF_ALLOWED:
+                    return await update.message.reply_text(
+                        f"❌ Unsupported country `{sel}`. Allowed: {', '.join(sorted(self.config.APF_ALLOWED))}",
+                        parse_mode=ParseMode.MARKDOWN,
+                    )
+                selected_country = sel
+                scope_label = sel
+
+            rows = await self.bq_client.execute_dpf_query(selected_country)
+            if not rows:
+                return await update.message.reply_text(f"No deposit data for {scope_label}.")
+
+            country_groups: dict[str, list[dict]] = {}
+            for r in rows:
+                c = (r.get("country") or "") or "Unknown"
+                country_groups.setdefault(c, []).append(r)
+
+            current_time, date_range = get_date_range_header()
+            header_text = (
+                f"💸 *Deposit Performance* \n"
+                f"⏰ Daily Data Cutoff: Data up to {current_time} (BKK) for each day \n"
+                f"📅 Date range: {date_range[2]} → {date_range[0]}"
+            )
+            await update.message.reply_text(header_text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
+
+            await send_dpf_tables(update, country_groups, max_width=52)
+
+        except Exception as e:
+            logger.exception("Error in /dpf")
+            await update.message.reply_text(
+                f"Error: `{e}`\nLocation: {self.config.BQ_LOCATION}",
+                parse_mode=ParseMode.MARKDOWN
+            )
+
+    def run(self):
+        application = ApplicationBuilder().token(self.config.TELEGRAM_TOKEN).build()
+        application.add_handler(CommandHandler(["help", "start"], self.help_command))
+        application.add_handler(CommandHandler("apf", self.apf_command))
+        application.add_handler(CommandHandler("dist", self.dist_command))
+        application.add_handler(CommandHandler("dpf", self.dpf_command))
+        application.run_polling(poll_interval=2.0, timeout=50)
 
 if __name__ == "__main__":
-    main()
+    bot = RealTimeBot()
+    bot.run()
