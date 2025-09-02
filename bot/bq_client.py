@@ -14,7 +14,7 @@ class BigQueryClient:
         )
         
     async def execute_apf_query(self, target_country):
-        apf_file = "..//sql//apf_function.sql"
+        apf_file = ".//sql//apf_function.sql"
         with open(apf_file, "r", encoding="utf-8") as f:
             sql = f.read()
         
@@ -39,7 +39,7 @@ class BigQueryClient:
         - target_date: 'YYYY-MM-DD'
         - selected_country: STRING or None
         """
-        dist_file = "..//sql//dist_function.sql"
+        dist_file = ".//sql//dist_function.sql"
         with open(dist_file, "r", encoding="utf-8") as f:
             sql = f.read()
 
@@ -62,7 +62,7 @@ class BigQueryClient:
         Deposit Performance (DPF): last 3 local days, capped at 'now'.
         Optional filter by country (TH/PH/BD/PK/ID) when target_country is provided.
         """
-        dpf_file = "..//sql//dpf_function.sql"
+        dpf_file = ".//sql//dpf_function.sql"
         with open(dpf_file, "r", encoding="utf-8") as f:
             sql = f.read()
 

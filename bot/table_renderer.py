@@ -13,14 +13,22 @@ class TableFormatter:
     - Right-aligns numeric columns, left-aligns text
     """
 
-    def __init__(self, headers, rows, pad=1, min_col_width=3):
+    def __init__(self, headers, rows, pad=1, min_col_width=3, fixed_widths=None):
         self.headers = [str(h) for h in headers]
         self.rows = [[("" if c is None else str(c)) for c in r] for r in rows]
         self.pad = pad
         self.min_col_width = max(1, min_col_width)
+        self.fixed_widths = fixed_widths  # <= NEW # e.g. [20, None, 8, 12, 10, 8]
 
     def format(self, max_width=None):
         widths = self._natural_widths()
+
+        if self.fixed_widths:
+            widths = [
+                max(self.min_col_width, fw) if isinstance(fw, int) else w
+                for w, fw in zip(widths, self.fixed_widths)
+            ]
+        
         if max_width:
             widths = self._shrink_to_fit(widths, max_width)
 
@@ -179,7 +187,7 @@ async def send_apf_tables(update: Update, country_groups, max_width=72):
             )
 
 
-def render_channel_distribution(country: str, rows: list[dict], max_width: int = 72) -> str:
+def render_channel_distribution(country: str, rows: list[dict], max_width: int = 80) -> str:
     if country == "PH":
         currency = "PHP"
     elif country == "TH":
@@ -193,22 +201,25 @@ def render_channel_distribution(country: str, rows: list[dict], max_width: int =
 
     headers = [
         "Channel Name",
-        "Deposit Counts",
+        "Deposit Count",
         f"Deposit Volume ({currency})",
-        f"Average Deposit ({currency})",
+        f"Avg. Deposit ({currency})",
         "% Total",
     ]
 
     data_rows = []
     for r in rows:
         data_rows.append([
-            str(r.get("method", "")),
+            str(r.get("method", "").replace("-",".").replace("vcpay.ph.native", "vcpay")),
             _fmt_number(r.get("deposit_tnx_count")),
             _fmt_number(r.get("total_deposit_amount_native")),
             _fmt_number(r.get("average_deposit_amount_native")),
             _fmt_number(r.get("pct_of_country_total_native")),
         ])
-    table = TableFormatter(headers, data_rows).format(max_width=max_width)
+
+    fixed = [48, 7, 10, 7, 6]
+
+    table = TableFormatter(headers, data_rows, fixed_widths= fixed).format(max_width=max_width)
 
     title = f"Country: {country}"
     return f"{title}\n{table}"
@@ -235,7 +246,18 @@ def render_dpf_table(country: str, rows: list[dict], max_width: int = 72) -> str
     DPF table (per country): Date, Deposits, Volume (USD), Average (USD)
     rows must contain: date, deposit_tnx_count, total_deposit_amount_usd, average_deposit_amount_usd
     """
-    headers = ["Date", "Average Deposit (USD)", "Total Deposit (USD)", "Weightage"]
+    if country == "PH":
+        currency = "PHP"
+    elif country == "TH":
+        currency = "THB"
+    elif country == "BD":
+        currency = "BDT"
+    elif country == "PK":
+        currency = "PKR"
+    elif country == "ID":
+        currency = "IDR"
+
+    headers = ["Date", f"Avg. Deposit ({currency})", f"Total Deposit ({currency})", "Weightage"]
     data_rows = []
     for r in rows:
         data_rows.append([
@@ -244,7 +266,9 @@ def render_dpf_table(country: str, rows: list[dict], max_width: int = 72) -> str
             _fmt_number(r.get("TotalDeposit", 0)),
             _fmt_pct(r.get("Weightage", 0)),
         ])
-    table = TableFormatter(headers, data_rows).format(max_width=max_width)
+    fixed = [None, 10, None, None]
+
+    table = TableFormatter(headers, data_rows, fixed_widths= fixed).format(max_width=max_width)
     title = f"Country: {country}"
     return f"{title}\n{table}"
 

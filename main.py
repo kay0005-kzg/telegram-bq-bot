@@ -50,22 +50,22 @@ class RealTimeBot:
         msg = """🤖 **Realtime Report Bot**
 
 *Deposit Channel Distribution* (Specific date)
-• `/dist a <YYYYMMDD>`: Distribution for all countries
-• `/dist <COUNTRY> <YYYYMMDD>`: Distribution for one country (e.g., `/dist TH 20250901`)
+• `/dist a <YYYYMMDD>` : Distribution for all countries
+• `/dist <COUNTRY> <YYYYMMDD>` : Distribution for one country (e.g., `/dist TH 20250901`)
 
 *Acquisition Performance* (Rolling 3 days)
-• `/apf a`: Acquisition data for all countries
-• `/apf <COUNTRY>`: Data for a specific country (e.g., `/apf TH`)
+• `/apf a` : Acquisition data for all countries
+• `/apf <COUNTRY>` : Data for a specific country (e.g., `/apf TH`)
 
 *Deposit Performance* (Rolling 3 days)
-• `/dpf a`: Deposit data for all countries
-• `/dpf <COUNTRY>`: Data for a specific country (e.g., `/dpf PH`)
+• `/dpf a` : Deposit data for all countries
+• `/dpf <COUNTRY>` : Data for a specific country (e.g., `/dpf PH`)
 
 *📍 Supported Countries:* TH, PH, BD, PK, ID
 
 *ℹ️ Data Scope:*
-• *Timezone:* Asia/Bangkok (UTC+7)
-• *Update Frequency:* Near real-time"""
+• *Timezone:* GMT+7
+• *Data Update:* Near real-time"""
         await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
 
     async def apf_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -102,7 +102,7 @@ class RealTimeBot:
             current_time, date_range = get_date_range_header()
             header_text = (
                 f"📊 *Acquisition Summary* \n"
-                f"⏰ Daily Data Cutoff: Data up to {current_time} (BKK) for each day \n"
+                f"⏰ Data Cutoff: Data up to {current_time} (GMT+7) for each day \n"
                 f"📅 Date range: {date_range[2]} → {date_range[0]}"
             )
             await update.message.reply_text(header_text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
@@ -221,7 +221,7 @@ class RealTimeBot:
             current_time, date_range = get_date_range_header()
             header_text = (
                 f"💸 *Deposit Performance* \n"
-                f"⏰ Daily Data Cutoff: Data up to {current_time} (BKK) for each day \n"
+                f"⏰ Data Cutoff: Data up to {current_time} (GMT+7) for each day \n"
                 f"📅 Date range: {date_range[2]} → {date_range[0]}"
             )
             await update.message.reply_text(header_text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
