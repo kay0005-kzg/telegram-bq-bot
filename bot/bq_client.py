@@ -4,7 +4,6 @@ import logging
 import os
 
 logger = logging.getLogger(__name__)
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class BigQueryClient:
     def __init__(self, config):
@@ -15,7 +14,7 @@ class BigQueryClient:
         )
         
     async def execute_apf_query(self, target_country):
-        apf_file = os.path.join(BASE_DIR, "sql", "apf_function.sql")
+        apf_file = "..//sql//apf_function.sql"
         with open(apf_file, "r", encoding="utf-8") as f:
             sql = f.read()
         
@@ -40,7 +39,7 @@ class BigQueryClient:
         - target_date: 'YYYY-MM-DD'
         - selected_country: STRING or None
         """
-        dist_file = os.path.join(BASE_DIR, "sql", "dist_function.sql")
+        dist_file = "..//sql//dist_function.sql"
         with open(dist_file, "r", encoding="utf-8") as f:
             sql = f.read()
 
@@ -63,7 +62,7 @@ class BigQueryClient:
         Deposit Performance (DPF): last 3 local days, capped at 'now'.
         Optional filter by country (TH/PH/BD/PK/ID) when target_country is provided.
         """
-        dpf_file = os.path.join(BASE_DIR, "sql", "dpf_function.sql")
+        dpf_file = "..//sql//dpf_function.sql"
         with open(dpf_file, "r", encoding="utf-8") as f:
             sql = f.read()
 
