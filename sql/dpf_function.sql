@@ -84,7 +84,7 @@ SELECT
   c.date,
   c.country,
   c.AverageDeposit,
-  c.TotalDeposit,
+  ROUND(c.TotalDeposit,0) AS TotalDeposit,
   ROUND(c.TotalDeposit / NULLIF(t.TotalToday, 0), 4) AS Weightage
 FROM consolidated c 
 LEFT JOIN today_total t ON c.country = t.country
