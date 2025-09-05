@@ -132,8 +132,14 @@ consolidated_nar AS (
     COUNT(DISTINCT vt.username) AS NAR
   FROM view_total vt
   GROUP BY vt.date, vt.name, vt.country
+),
+ brand_total AS (
+    SELECT 
+        brand,
+        SUM(nar) AS total_nar   -- hoặc SUM(total_deposit) nếu có
+    FROM consolidated_nar
+    GROUP BY brand
 )
-
 SELECT
   cn.date,
   cn.brand,
@@ -147,5 +153,7 @@ LEFT JOIN consolidated_deposit cd
   ON cn.date = cd.date
  AND cn.brand = cd.brand
  AND cn.country = cd.country
+JOIN brand_total bt
+  ON cn.brand = bt.brand
 WHERE @target_country IS NULL OR cn.country = @target_country
-ORDER BY cn.brand, cn.date DESC
+ORDER BY bt.total_nar DESC, cn.date DESC

@@ -67,6 +67,9 @@ class RealTimeBot:
         raw_admins = os.getenv("ADMIN_USER_IDS", "")
         self.admin_user_ids = {int(x) for x in raw_admins.replace(" ", "").split(",") if x.strip().isdigit()}
 
+        logger.info("registered_file path: %s", self.registered_file.resolve())
+        logger.info("invite_tokens path:   %s", self.tokens_file.resolve())
+
     def _load_invite_tokens(self) -> dict:
         """Load invite tokens from logs/invite_tokens.json."""
         try:
@@ -165,7 +168,8 @@ class RealTimeBot:
         bot_username: str,
         ttl_seconds: int = 30 * 24 * 60 * 60,  # 1 month default
         max_uses: int = -1,                     # -1 = unlimited until expiry
-        note: str | None = None
+        note: str | None = None,
+        allowed_commands: list[str] | None = None,   # <--- NEW
     ) -> str:
         """
         Create a signed deep-link invite usable at:
@@ -212,6 +216,7 @@ class RealTimeBot:
             "note": note,
             "revoked": False,
             "created_at": datetime.now(ZoneInfo("Asia/Bangkok")).isoformat(),
+            "allowed_commands": sorted(set(allowed_commands or [])),  # <--- persist
         }
         self._save_invite_tokens()
 
@@ -223,52 +228,89 @@ class RealTimeBot:
         return bool(u and int(u.id) in self.admin_user_ids)
 
     async def admin_create_link(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        # Guard: admin only
+        # Admin guard
         logger.info("Admin create link requested by user_id=%s", update.effective_user.id if update.effective_user else "unknown")
         if not self._is_admin(update):
             return await update.message.reply_text("⚠️ You are not authorized to create invite links.")
 
-        # Default: 24 hours, unlimited uses until expiry
-        ttl_seconds = 30 * 24 * 60 * 60
-        max_uses = -1  # -1 means unlimited uses until expiry
-
-        # Optional: allow override via args, e.g. "/admin_create_link 24h 50 Finance batch"
-        # Formats: 30m, 2h, 24h, 7d
         def _parse_ttl(s: str) -> int:
             s = s.lower().strip()
             if s.endswith("m"): return int(s[:-1]) * 60
             if s.endswith("h"): return int(s[:-1]) * 60 * 60
             if s.endswith("d"): return int(s[:-1]) * 24 * 60 * 60
-            if s.endswith("mo"): return int(s[:-2]) * 30 * 24 * 60 * 60  # 1 mo = 30d
+            if s.endswith("mo"): return int(s[:-2]) * 30 * 24 * 60 * 60
             return int(s)  # seconds
 
-        note = None
-        if context.args:
-            # Try to parse TTL if present as first arg
-            try:
-                ttl_seconds = _parse_ttl(context.args[0])
-                # If there is a second arg and it's an int, treat as max_uses
-                if len(context.args) >= 2 and context.args[1].lstrip("-").isdigit():
-                    max_uses = int(context.args[1])
-                    if max_uses == 0:
-                        max_uses = -1  # 0 makes no sense; normalize to unlimited
-                # Remaining args form the note
-                if len(context.args) >= 3:
-                    note = " ".join(context.args[2:])
-            except Exception:
-                # If parsing fails, keep defaults and treat all args as note
-                note = " ".join(context.args)
+        # Defaults
+        ttl_seconds = 30 * 24 * 60 * 60
+        max_uses = -1
+        note: str | None = None
+        allowed_commands: list[str] | None = None   # None => FULL access
 
-        # Create the invite deep link
+        # --- Parse args robustly ---
+        args = list(context.args or [])
+
+        # 1) Pull out flags first (so they don't end up in note)
+        remaining: list[str] = []
+        for a in args:
+            if a.startswith("-cmds="):
+                cmds_raw = a.split("=", 1)[1]
+                cmds = [x.strip().lower() for x in cmds_raw.split(",") if x.strip()]
+                # validate against known commands to avoid typos leaking through
+                valid = {"apf", "dpf", "dist"}
+                bad = [c for c in cmds if c not in valid]
+                if bad:
+                    return await update.message.reply_text(
+                        f"⚠️ Unknown command(s): {', '.join(bad)}. Allowed: /apf, /dpf, /dist"
+                    )
+                allowed_commands = cmds if cmds else []  # [] means block all
+            else:
+                remaining.append(a)
+
+        # 2) Parse positionals: [TTL] [max_uses] [note...]
+        try:
+            if remaining:
+                ttl_seconds = _parse_ttl(remaining[0])
+            if len(remaining) >= 2 and remaining[1].lstrip("-").isdigit():
+                max_uses = int(remaining[1])
+                if max_uses == 0:
+                    max_uses = -1
+            if len(remaining) >= 3:
+                note = " ".join(remaining[2:])
+            elif len(remaining) == 2 and not remaining[1].lstrip("-").isdigit():
+                # If 2nd arg isn't an int, treat it as part of note
+                note = remaining[1]
+        except Exception:
+            # fall back: treat all remaining as note
+            note = " ".join(remaining) if remaining else None
+
         bot_username = context.bot.username
-        link = self.create_invite_link(bot_username=bot_username, ttl_seconds=ttl_seconds, max_uses=max_uses, note=note)
 
-        # Reply with the link
+        # Create link
+        link = self.create_invite_link(
+            bot_username=bot_username,
+            ttl_seconds=ttl_seconds,
+            max_uses=max_uses,
+            note=note,
+            allowed_commands=allowed_commands,
+        )
+
+        cmds_txt = (
+            "all"
+            if allowed_commands is None
+            else (", ".join(sorted(set(allowed_commands))) if allowed_commands else "(no commands)")
+        )
+
+        # Log what we parsed (helps debug)
+        logger.info("invite_link args parsed: ttl=%s, max_uses=%s, cmds=%s, note=%r",
+                    ttl_seconds, max_uses, allowed_commands, note)
+
         return await update.message.reply_text(
             "🔗 Invite link created:\n"
             f"{link}\n\n"
             f"⏳ Expires in ~{ttl_seconds//3600}h\n"
             f"👥 Uses: {'unlimited' if max_uses == -1 else max_uses}\n"
+            f"🛂 Allowed commands: {cmds_txt}\n"
             f"📝 {note or '(no note)'}"
         )
 
@@ -296,6 +338,7 @@ class RealTimeBot:
                                 "first_name": u.get("first_name"),
                                 "last_name":  u.get("last_name"),
                                 "ts":         u.get("ts"),
+                                "allowed_commands": u.get("allowed_commands"),  # <-- KEEP
                             }
                     return users
 
@@ -321,6 +364,8 @@ class RealTimeBot:
                         "first_name": info.get("first_name"),
                         "last_name":  info.get("last_name"),
                         "ts":         info.get("ts"),
+                        "allowed_commands": info.get("allowed_commands"),  # <-- SAVE
+
                     }
                     for uid, info in sorted(self.registered_users.items(), key=lambda kv: kv[0])
                 ]
@@ -329,79 +374,101 @@ class RealTimeBot:
                 json.dump(out, f, ensure_ascii=False, indent=2)
         except Exception:
             logger.exception("Failed to save registered_users.json")
+    
+    def _user_allowed_commands(self, user_id: int) -> set[str] | None:
+        """
+        Returns a set of allowed commands (lowercase) or None for full access.
+        """
+        info = self.registered_users.get(int(user_id))
+        if not info:
+            return None
+        allowed = info.get("allowed_commands")
+        if not allowed:
+            return None  # None => full access
+        return {c.lower() for c in allowed}
+
+    async def _ensure_allowed(self, update: Update, cmd: str) -> bool:
+        """
+        Guard: returns True if user can run `cmd`; otherwise replies a warning and returns False.
+        `cmd` should be lowercase without leading slash, e.g., 'dpf', 'dist', 'apf'.
+        """
+        user = update.effective_user
+        if not user:
+            await update.message.reply_text("⚠️ Cannot identify user.")
+            return False
+
+        allowed = self._user_allowed_commands(user.id)
+        if allowed is None or cmd.lower() in allowed:
+            return True
+
+        await update.message.reply_text(
+            f"⛔ This command is not enabled for you.\n"
+            f"Allowed: /{', '.join(sorted(allowed)) if allowed else 'all'}\n"
+            f"Ask an admin for the permission."
+        )
+        return False
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """
-        Handle /start command with optional token parameter.
-        If token is provided and valid, register the user automatically.
-        """
         user = update.effective_user
         if not user:
             return await update.message.reply_text("⚠️ Could not identify user.")
 
         uid = int(user.id)
-        
-        # Check if user is already registered
+        logger.info("/start args=%r user_id=%s", context.args, uid)
+
+        # If there is a token, validate it FIRST (even if user exists)
+        token = context.args[0] if (context.args and len(context.args) > 0) else None
+        if token:
+            is_valid, message, token_data = self.validate_invite_token(token)
+            if not is_valid:
+                return await update.message.reply_text(f"⚠️ Registration failed: {message}")
+
+            allowed = token_data.get("allowed_commands", None)
+
+            # upsert user and update allowed_commands
+            rec = self.registered_users.get(uid, {})
+            existing_allowed = rec.get("allowed_commands", None)
+            
+            if existing_allowed == []:
+                keep_allowed = existing_allowed   # preserve []
+            else:
+                keep_allowed = allowed # may be None or a list
+
+            rec.update({
+                "username":   getattr(user, "username", None),
+                "first_name": getattr(user, "first_name", None),
+                "last_name":  getattr(user, "last_name", None),
+                "ts":         rec.get("ts") or datetime.now(ZoneInfo("Asia/Bangkok")).isoformat(),
+                "registered_via": rec.get("registered_via") or "invite_token",
+                "invite_note": token_data.get("note"),
+                "allowed_commands": keep_allowed,   # <-- preserve exactly (None/list/[])
+            })
+            self.registered_users[uid] = rec
+            self._save_registered_users()
+            logger.info("User %s saved with allowed=%r", uid, allowed)
+
+            return await update.message.reply_text(
+                "✅ Invite accepted.\n"
+                f"🛂 Allowed commands: "
+                f"{'all' if allowed is None else (', '.join(allowed) if allowed else 'All')}\n"
+                "Type /help to see available commands."
+            )
+
+        # No token supplied
         if uid in self.registered_users:
-            # User already registered, just show help
             return await self.help_command(update, context)
 
-        # Check if there's a token parameter
-        if context.args and len(context.args) > 0:
-            token = context.args[0]
-            
-            # Validate the token
-            is_valid, message, token_data = self.validate_invite_token(token)
-            
-            if is_valid:
-                # Token is valid - register the user
-                self.registered_users[uid] = {
-                    "username":   getattr(user, "username", None),
-                    "first_name": getattr(user, "first_name", None),
-                    "last_name":  getattr(user, "last_name", None),
-                    "ts":         datetime.now(ZoneInfo("Asia/Bangkok")).isoformat(),
-                    "registered_via": "invite_token",
-                    "invite_note": token_data.get("note") if token_data else None,
-                }
-                self._save_registered_users()
-                
-                # Log the registration event
-                self._log_event({
-                    "event": "user_registered_via_token",
-                    "user_id": uid,
-                    "username": getattr(user, "username", None),
-                    "first_name": getattr(user, "first_name", None),
-                    "invite_note": token_data.get("note") if token_data else None,
-                })
-                
-                welcome_msg = (
-                    f"🎉 Welcome, {user.first_name or 'User'}! \n"
-                    f"You've been successfully registered via invite link.\n\n"
-                )
-                
-                if token_data and token_data.get("note"):
-                    welcome_msg += f"📝 Invite note: {token_data['note']}\n\n"
-                
-                welcome_msg += "Please get started by typing `/help` to see available commands."
-                
-                await update.message.reply_text(welcome_msg, parse_mode=ParseMode.MARKDOWN)
-                
-            else:
-                # Invalid token
-                await update.message.reply_text(
-                    f"⚠️ Registration failed: {message}\n\n"
-                    "Please contact an admin for a valid invite link.",
-                    parse_mode=ParseMode.MARKDOWN
-                )
-        else:
-            # No token provided - user needs to register manually or get an invite
-            await update.message.reply_text(
-                "👋 Welcome to the Realtime Report Bot!\n\n"
-                "🔐 This bot requires registration to use.\n"
-                "Please contact an admin to get an invite link.\n\n"
-                "If you have an invite link, click on it to register automatically.",
-                parse_mode=ParseMode.MARKDOWN
-            )
+        # New manual registration flow (no token)
+        self.registered_users[uid] = {
+            "username":   getattr(user, "username", None),
+            "first_name": getattr(user, "first_name", None),
+            "last_name":  getattr(user, "last_name", None),
+            "ts":         datetime.now(ZoneInfo("Asia/Bangkok")).isoformat(),
+            "registered_via": "manual",
+            # no allowed_commands field -> full access
+        }
+        self._save_registered_users()
+        return await update.message.reply_text("🎉 Registered. Type /help to begin.")
 
     async def register_now(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Manual registration command (kept for backward compatibility)"""
@@ -486,26 +553,70 @@ class RealTimeBot:
         if not user or user.id not in self.registered_users:
             return await update.message.reply_text("⚠️ Please register first by contacting the admin.")
 
-        msg = """🤖 **Realtime Report Bot**
+        # What is this user allowed to run?
+        allowed = self._user_allowed_commands(user.id)  # None => full access; set() => none; set([...]) => whitelist
 
-*Deposit Channel Distribution* (Specific date)
-• `/dist a <YYYYMMDD>` : Distribution for all countries
-• `/dist <COUNTRY> <YYYYMMDD>` : Distribution for one country (e.g., `/dist TH 20250901`)
+        # Define command catalog
+        catalog = {
+            "dist": {
+                "title": "Deposit Channel Distribution (Specific date)",
+                "lines": [
+                    "/dist a <YYYYMMDD> — all countries",
+                    "/dist <COUNTRY> <YYYYMMDD> — e.g., /dist TH 20250901",
+                ],
+            },
+            "apf": {
+                "title": "Acquisition Performance (Rolling 3 days)",
+                "lines": [
+                    "/apf a — all countries",
+                    "/apf <COUNTRY> — e.g., /apf TH",
+                ],
+            },
+            "dpf": {
+                "title": "Deposit Performance (Rolling 3 days)",
+                "lines": [
+                    "/dpf a — all countries",
+                    "/dpf <COUNTRY> — e.g., /dpf PH",
+                ],
+            },
+        }
 
-*Acquisition Performance* (Rolling 3 days)
-• `/apf a` : Acquisition data for all countries
-• `/apf <COUNTRY>` : Data for a specific country (e.g., `/apf TH`)
+        # Resolve which commands to show
+        if allowed is None:
+            visible_cmds = ["dist", "apf", "dpf"]  # full access
+        else:
+            visible_cmds = [c for c in ["dist", "apf", "dpf"] if c in allowed]
 
-*Deposit Performance* (Rolling 3 days)
-• `/dpf a` : Deposit data for all countries
-• `/dpf <COUNTRY>` : Data for a specific country (e.g., `/dpf PH`)
+        # If nothing is allowed
+        if not visible_cmds:
+            return await update.message.reply_text(
+                "🔒 You currently have no enabled commands. Please contact an admin for access."
+            )
 
-*📍 Supported Countries:* TH, PH, BD, PK, ID
+        # Build help text
+        parts = ["🤖 *Realtime Report Bot*\n"]
+        for cmd in visible_cmds:
+            section = catalog[cmd]
+            parts.append(f"*{section['title']}*")
+            for line in section["lines"]:
+                parts.append(f"• `{line}`")
+            parts.append("")  # blank line
 
-*ℹ️ Data Scope:*
-• *Timezone:* GMT+7
-• *Data Update:* Near real-time"""
-        await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
+        # Common footer
+        parts.append("*📍 Supported Countries:* TH, PH, BD, PK, ID")
+        parts.append("*ℹ️ Data Scope:*")
+        parts.append("• *Timezone:* GMT+7")
+        parts.append("• *Data Update:* Near real-time")
+
+        # Show admin tool only to admins
+        if self._is_admin(update):
+            parts.append("")
+            parts.append("*Admin:*")
+            parts.append("• `/admin_create_link` — create invite with all commands")
+            parts.append("• `/admin_create_link -cmds=dist,dpf` — create invite with limited commands")
+
+        text = "\n".join(parts)
+        await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True) 
 
     async def apf_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         # self._log_event({
@@ -518,6 +629,9 @@ class RealTimeBot:
         if not user or user.id not in self.registered_users:
             return await update.message.reply_text("⚠️ Please register first by contacting the admin.")
         
+        if not await self._ensure_allowed(update, "apf"):
+            return
+
         try:
             if not context.args:
                 return await update.message.reply_text(
@@ -556,7 +670,7 @@ class RealTimeBot:
             )
             await update.message.reply_text(header_text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
 
-            await send_apf_tables(update, country_groups, max_width=52)
+            await send_apf_tables(update, country_groups, max_width=52, max_length=2400)
 
         except Exception as e:
             logger.exception("Error in /apf")
@@ -575,6 +689,9 @@ class RealTimeBot:
         user = update.effective_user
         if not user or user.id not in self.registered_users:
             return await update.message.reply_text("⚠️ Please register first by contacting the admin.")
+        
+        if not await self._ensure_allowed(update, "dist"):
+            return
         # self._log_event({
         # **self._base_payload(update),
         # "event": "command",
@@ -655,6 +772,9 @@ class RealTimeBot:
         user = update.effective_user
         if not user or user.id not in self.registered_users:
             return await update.message.reply_text("⚠️ Please register first by contacting the admin.")
+        
+        if not await self._ensure_allowed(update, "dpf"):
+            return
         
         try:
             if not context.args:
