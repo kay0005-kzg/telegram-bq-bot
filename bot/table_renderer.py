@@ -306,7 +306,7 @@ def split_table_text_customize(text: str, first_len: int = 1400, max_len: int = 
     return chunks
 
 # ---------- Rendering using TableFormatter ----------
-from prettytable import PrettyTable
+# from prettytable import PrettyTable
 from telegram.constants import ParseMode
 
 def render_apf_table(country, rows, max_width=72):
@@ -450,7 +450,7 @@ def render_dpf_table(country: str, rows: list[dict], max_width: int = 72) -> str
     dates   = [str(r.get("date", "")) for r in rows]
     avgs    = [str(_fmt_number(r.get("AverageDeposit", 0))) for r in rows]
     totals  = [str(_fmt_number(r.get("TotalDeposit", 0))) for r in rows]
-    weights = [str(_fmt_pct(r.get("Weightage", 0))) for r in rows]
+    weights = [str(_fmt_pct(r.get("Weightage", 0), deno = 1)) for r in rows]
 
     w0 = max((len(x) for x in dates),   default=0)
     w1 = max((len(x) for x in avgs),    default=0)

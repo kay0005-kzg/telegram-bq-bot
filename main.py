@@ -67,8 +67,100 @@ class RealTimeBot:
         raw_admins = os.getenv("ADMIN_USER_IDS", "")
         self.admin_user_ids = {int(x) for x in raw_admins.replace(" ", "").split(",") if x.strip().isdigit()}
 
+        self.group_policies_file = self.logs_dir / "group_policies.json"
+        self.group_policies = self._load_group_policies()  # { chat_id(str): {"allowed_commands":[...], "set_by": int, "ts": iso } }
+
+
         logger.info("registered_file path: %s", self.registered_file.resolve())
         logger.info("invite_tokens path:   %s", self.tokens_file.resolve())
+
+    def _visible_commands_for_chat(self, update: Update) -> list[str]:
+        """
+        Return the list of commands visible in the current context.
+        - If chat has a group policy -> use that (applies to everyone in the chat).
+        - Else -> fall back to per-user allowed commands (None => all).
+        """
+        chat = update.effective_chat
+        user = update.effective_user
+        all_cmds = ["dist", "apf", "dpf"]
+
+        # Group policy?
+        if chat and chat.type in ("group", "supergroup"):
+            policy = self.group_policies.get(str(chat.id))
+            if policy is not None:
+                allowed = policy.get("allowed_commands") or []
+                # normalize and filter
+                allowed_norm = [c for c in all_cmds if c in set(x.lower() for x in allowed)]
+                return allowed_norm
+
+        # No group policy -> per-user
+        allowed_user = self._user_allowed_commands(int(user.id) if user else -1)  # None => full
+        if allowed_user is None:
+            return all_cmds
+        return [c for c in all_cmds if c in allowed_user]
+    
+    def _load_group_policies(self) -> dict:
+        try:
+            if self.group_policies_file.exists():
+                with self.group_policies_file.open("r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        return data
+        except Exception:
+            logger.exception("Failed to load group_policies.json; starting empty")
+        return {}
+
+    def _save_group_policies(self) -> None:
+        try:
+            with self.group_policies_file.open("w", encoding="utf-8") as f:
+                json.dump(self.group_policies, f, ensure_ascii=False, indent=2)
+        except Exception:
+            logger.exception("Failed to save group_policies.json")
+    
+    async def _ensure_allowed(self, update: Update, cmd: str) -> bool:
+        """
+        Returns True if user can run `cmd` in this chat.
+        Group policy (if set) is enforced for that chat.
+        If no group policy, fall back to per-user allowed_commands.
+        """
+        user = update.effective_user
+        chat = update.effective_chat
+        msg = update.effective_message
+
+        if not user or not chat:
+            if msg:
+                await msg.reply_text("⚠️ Cannot identify user/chat.")
+            return False
+
+        cmd = cmd.lower()
+
+        # 1) If the chat is a group/supergroup and has a policy, enforce it for everyone.
+        if chat.type in ("group", "supergroup"):
+            policy = self.group_policies.get(str(chat.id))
+            if policy is not None:
+                allowed = set(c.lower() for c in (policy.get("allowed_commands") or []))
+                if cmd in allowed:
+                    return True
+                # Group policy denies
+                if msg:
+                    await msg.reply_text(
+                        "⛔ This command is disabled in this group.\n"
+                        f"Allowed here: /{', /'.join(sorted(allowed))}" if allowed else "No commands enabled here."
+                    )
+                return False
+
+        # 2) No group policy → check per-user whitelist (None = full)
+        allowed_user = self._user_allowed_commands(user.id)
+        if allowed_user is None or cmd in allowed_user:
+            return True
+
+        if msg:
+            await msg.reply_text(
+                "⛔ This command is not enabled for you.\n"
+                f"Allowed: /{', /'.join(sorted(allowed_user)) if allowed_user else 'all'}\n"
+                f"Ask an admin for permission."
+            )
+        return False
 
     def _load_invite_tokens(self) -> dict:
         """Load invite tokens from logs/invite_tokens.json."""
@@ -387,26 +479,26 @@ class RealTimeBot:
             return None  # None => full access
         return {c.lower() for c in allowed}
 
-    async def _ensure_allowed(self, update: Update, cmd: str) -> bool:
-        """
-        Guard: returns True if user can run `cmd`; otherwise replies a warning and returns False.
-        `cmd` should be lowercase without leading slash, e.g., 'dpf', 'dist', 'apf'.
-        """
-        user = update.effective_user
-        if not user:
-            await update.message.reply_text("⚠️ Cannot identify user.")
-            return False
+    # async def _ensure_allowed(self, update: Update, cmd: str) -> bool:
+    #     """
+    #     Guard: returns True if user can run `cmd`; otherwise replies a warning and returns False.
+    #     `cmd` should be lowercase without leading slash, e.g., 'dpf', 'dist', 'apf'.
+    #     """
+    #     user = update.effective_user
+    #     if not user:
+    #         await update.message.reply_text("⚠️ Cannot identify user.")
+    #         return False
 
-        allowed = self._user_allowed_commands(user.id)
-        if allowed is None or cmd.lower() in allowed:
-            return True
+    #     allowed = self._user_allowed_commands(user.id)
+    #     if allowed is None or cmd.lower() in allowed:
+    #         return True
 
-        await update.message.reply_text(
-            f"⛔ This command is not enabled for you.\n"
-            f"Allowed: /{', '.join(sorted(allowed)) if allowed else 'all'}\n"
-            f"Ask an admin for the permission."
-        )
-        return False
+    #     await update.message.reply_text(
+    #         f"⛔ This command is not enabled for you.\n"
+    #         f"Allowed: /{', '.join(sorted(allowed)) if allowed else 'all'}\n"
+    #         f"Ask an admin for the permission."
+    #     )
+    #     return False
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
@@ -548,15 +640,13 @@ class RealTimeBot:
         logger.info("MSG %s", payload)
         self._log_event(payload)
         
+    # async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         if not user or user.id not in self.registered_users:
             return await update.message.reply_text("⚠️ Please register first by contacting the admin.")
 
-        # What is this user allowed to run?
-        allowed = self._user_allowed_commands(user.id)  # None => full access; set() => none; set([...]) => whitelist
-
-        # Define command catalog
+        # Command catalog (titles + usage)
         catalog = {
             "dist": {
                 "title": "Deposit Channel Distribution (Specific date)",
@@ -581,16 +671,12 @@ class RealTimeBot:
             },
         }
 
-        # Resolve which commands to show
-        if allowed is None:
-            visible_cmds = ["dist", "apf", "dpf"]  # full access
-        else:
-            visible_cmds = [c for c in ["dist", "apf", "dpf"] if c in allowed]
+        # 🔑 Determine visibility by chat context
+        visible_cmds = self._visible_commands_for_chat(update)
 
-        # If nothing is allowed
         if not visible_cmds:
             return await update.message.reply_text(
-                "🔒 You currently have no enabled commands. Please contact an admin for access."
+                "🔒 No commands are enabled in this chat. Please contact an admin."
             )
 
         # Build help text
@@ -608,15 +694,9 @@ class RealTimeBot:
         parts.append("• *Timezone:* GMT+7")
         parts.append("• *Data Update:* Near real-time")
 
-        # Show admin tool only to admins
-        if self._is_admin(update):
-            parts.append("")
-            parts.append("*Admin:*")
-            parts.append("• `/admin_create_link` — create invite with all commands")
-            parts.append("• `/admin_create_link -cmds=dist,dpf` — create invite with limited commands")
-
         text = "\n".join(parts)
-        await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True) 
+        await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
+
 
     async def apf_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         # self._log_event({
@@ -822,6 +902,79 @@ class RealTimeBot:
                 parse_mode=ParseMode.MARKDOWN
             )
 
+    async def permission_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        # Admin guard
+        if not self._is_admin(update):
+            msg = update.effective_message
+            return await (msg.reply_text("⚠️ You are not authorized to set permissions.") if msg
+                        else context.bot.send_message(update.effective_chat.id, "⚠️ You are not authorized to set permissions."))
+
+        args = list(context.args or [])
+        chat_id_override = None
+        cmds_param = None
+
+        for a in args:
+            if a.startswith("-chat="):
+                chat_id_override = a.split("=", 1)[1].strip()
+            elif a.startswith("-cmds=") or a.startswith("-cds="):
+                cmds_param = a.split("=", 1)[1].strip().lower()
+
+        chat = update.effective_chat
+        msg  = update.effective_message
+        # forum/topic support
+        thread_id = getattr(msg, "message_thread_id", None)
+
+        # Resolve target chat
+        if chat_id_override:
+            target_chat_id = int(chat_id_override)
+            target_thread_id = None  # when overriding chat id, we don't have topic info
+        else:
+            if not chat:
+                return await context.bot.send_message(
+                    update.effective_user.id,
+                    "⚠️ Cannot identify chat. Use -chat=<chat_id> from DM."
+                )
+            target_chat_id = chat.id
+            # If the group has topics, reply in the same thread
+            target_thread_id = thread_id if getattr(chat, "is_forum", False) else None
+
+        # Validate commands
+        valid = {"apf", "dpf", "dist"}
+        if not cmds_param:
+            text = ("Usage: /permission -cmds=<apf,dpf,dist|all|none>\n"
+                    "Optional (from DM): -chat=<chat_id>")
+            return await (msg.reply_text(text) if msg else
+                        context.bot.send_message(target_chat_id, text, message_thread_id=target_thread_id))
+
+        if cmds_param == "all":
+            allowed = sorted(valid)
+        elif cmds_param == "none":
+            allowed = []
+        else:
+            parsed = [c.strip().lower() for c in cmds_param.split(",") if c.strip()]
+            bad = [c for c in parsed if c not in valid]
+            if bad:
+                text = f"⚠️ Unknown command(s): {', '.join(bad)}. Allowed: {', '.join(sorted(valid))}, or 'all'/'none'."
+                return await (msg.reply_text(text) if msg else
+                            context.bot.send_message(target_chat_id, text, message_thread_id=target_thread_id))
+            allowed = sorted(set(parsed))
+
+        # Save policy
+        self.group_policies[str(target_chat_id)] = {
+            "allowed_commands": allowed,
+            "set_by": int(update.effective_user.id) if update.effective_user else None,
+            "ts": datetime.now(ZoneInfo("Asia/Bangkok")).isoformat(),
+        }
+        self._save_group_policies()
+
+        # Build confirmation text (HTML-safe)
+        return await update.message.reply_text(
+                "✅ Group policy updated.\n"
+                f"🛂 Allowed commands: "
+                f"{'all' if allowed is None else (', '.join(allowed) if allowed else 'All')}\n"
+                "Type /help to see available commands."
+            )
+
     def run(self):
         application = ApplicationBuilder().token(self.config.TELEGRAM_TOKEN).build()
         # application.add_handler(MessageHandler("who", self.who_command))  # <-- add this
@@ -835,6 +988,8 @@ class RealTimeBot:
         application.add_handler(CommandHandler("dpf", self.dpf_command))
 
         application.add_handler(CommandHandler("admin_create_link", self.admin_create_link))
+        application.add_handler(CommandHandler("permission", self.permission_command))
+
 
         # Catch-all for logging all invalid messages
         application.add_handler(MessageHandler(filters.ALL, self.echo), group=1)
