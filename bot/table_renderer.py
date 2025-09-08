@@ -306,226 +306,186 @@ def split_table_text_customize(text: str, first_len: int = 1400, max_len: int = 
     return chunks
 
 # ---------- Rendering using TableFormatter ----------
-def render_apf_table(country, rows, max_width=72):
-    """
-    Build a wrapped box-drawing table for a single country.
-    rows: list of dicts with keys: date, brand, NAR, FTD, STD, TTD
-    max_width: max characters allowed for the table width (including borders)
-    """
-    headers = ["Date", "Brand", "NAR", "FTD", "STD", "TTD"]
-    data_rows = []
-    for r in rows:
-        data_rows.append([
-            str(r.get("date", "")),
-            str(r.get("brand", "")),
-            _fmt_number(r.get("NAR", 0)),
-            _fmt_number(r.get("FTD", 0)),
-            _fmt_number(r.get("STD", 0)),
-            _fmt_number(r.get("TTD", 0)),
-        ])
+from prettytable import PrettyTable
+from telegram.constants import ParseMode
 
-    table = TableFormatter(headers, data_rows, style = "ascii", dashed= False).format(max_width=max_width)
-    title = f"Country: {country}"
-    return f"{title}\n{table}"
+def render_apf_table(country, rows, max_width=72):
+    from collections import defaultdict
+    brand_groups = defaultdict(list)
+    for r in rows:
+        brand_groups[r.get("brand", "Unknown")].append(r)
+
+    FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩"}
+    flag = FLAGS.get(country, "")
+
+    # Escape country line and columns line
+    title_line   = f"*{escape_md_v2(f'COUNTRY: {country} {flag}')}*"
+    columns_line = escape_md_v2("Date | NAR | FTD | STD | TTD")
+
+    parts = [title_line, columns_line]
+
+    for brand, items in sorted(brand_groups.items()):
+        dates = [str(r.get("date", "")) for r in items]
+        nars  = [str(_fmt_number(r.get("NAR", 0))) for r in items]
+        ftds  = [str(_fmt_number(r.get("FTD", 0))) for r in items]
+        stds  = [str(_fmt_number(r.get("STD", 0))) for r in items]
+        ttds  = [str(_fmt_number(r.get("TTD", 0))) for r in items]
+
+        w0 = max(len(x) for x in dates) if dates else 0
+        w1 = max(len(x) for x in nars)  if nars  else 0
+        w2 = max(len(x) for x in ftds)  if ftds  else 0
+        w3 = max(len(x) for x in stds)  if stds  else 0
+        w4 = max(len(x) for x in ttds)  if ttds  else 0
+
+        lines = []
+        for i in range(len(items)):
+            line = " | ".join([
+                dates[i].ljust(w0),
+                nars[i].rjust(w1),
+                ftds[i].rjust(w2),
+                stds[i].rjust(w3),
+                ttds[i].rjust(w4),
+            ])
+            lines.append(line)
+
+        # Escape brand name (outside code block)
+        brand_line = escape_md_v2(str(brand))
+
+        # Table block inside code block (no escaping needed)
+        table_block = "```\n" + "\n".join(lines) + "```"
+        parts.append(f"{brand_line}\n{table_block}")
+
+    return "\n\n".join(parts)
 
 # ---------- Telegram send ----------
 async def send_apf_tables(update: Update, country_groups, max_width=72, max_length=4000):
-    """
-    Send one table per country.
-    - max_width controls wrapping to fit mobile/desktop (e.g., 48 for narrow mobile, 72 default).
-    """
-    for country, rows in sorted(country_groups.items()):
+    for country, rows in sorted(
+        ((c, r) for c, r in country_groups.items() if c is not None),
+        key=lambda x: x[0]
+    ):
         table_text = render_apf_table(country, rows, max_width=max_width)
 
-        # Escape for HTML parse mode (inside <pre> keep monospaced)
-        safe_text = html.escape(table_text)
-        # If very long (unlikely per country), split into multiple messages
-        for chunk in split_table_text_customize(safe_text, first_len= 1200):
-            await update.message.reply_text(
-                f"<pre>{chunk}</pre>",
-                parse_mode=ParseMode.HTML,
-                disable_web_page_preview=True
-            )
-
-
-def render_channel_distribution(country: str, rows: list[dict], max_width: int = 72) -> str:
-    
-    def upper_channel(s: str) -> str:
-        head, sep, tail = s.partition("/")
-        result = head.upper() + sep + tail
-        return result
-
-    if country == "PH":
-        currency = "PHP"
-    elif country == "TH":
-        currency = "THB"
-    elif country == "BD":
-        currency = "BDT"
-    elif country == "PK":
-        currency = "PKR"
-    elif country == "ID":
-        currency = "IDR"
-
-    headers = [
-        "Channel Name",
-        "Deposit Count",
-        f"Deposit Volume ({currency})",
-        f"Avg. Deposit ({currency})",
-        "% Total",
-    ]
-
-    # 👇 aggregate duplicates here
-    import pandas as pd
-
-    def build_channel_method_table(df: pd.DataFrame) -> pd.DataFrame:
-        # make sure numeric
-        grand_total = df["total_deposit_amount_native"].sum()
-
-        df["total_deposit_amount_native"] = pd.to_numeric(df["total_deposit_amount_native"], errors="coerce").fillna(0)
-        df["deposit_tnx_count"] = pd.to_numeric(df["deposit_tnx_count"], errors="coerce").fillna(0)
-
-        rows = []
-        # ---- sort parent groups by total desc
-        channel_totals = (
-            df.groupby("channel")["total_deposit_amount_native"]
-            .sum()
-            .sort_values(ascending=False)
-        )
-
-        for channel in channel_totals.index:
-            g = df[df["channel"] == channel]
-
-            total_deposit = g["total_deposit_amount_native"].sum()
-            total_count = g["deposit_tnx_count"].sum()
-            total_pct = total_deposit / grand_total if grand_total > 0 else 0
-
-            rows.append({
-                "channel": channel,
-                "total_deposit_amount_native": total_deposit,
-                "deposit_tnx_count": total_count,
-                "average_deposit_amount_native": (total_deposit / total_count) if total_count > 0 else 0,
-                "pct_of_country_total_native": total_pct,
-            })
-
-            # aggregate methods for this channel
-            method_df = (
-                g.groupby("method")
-                .agg({"total_deposit_amount_native": "sum", "deposit_tnx_count": "sum"})
-                .reset_index()
-            )
-            method_df["average_deposit_amount_native"] = (
-                method_df["total_deposit_amount_native"] /
-                method_df["deposit_tnx_count"].replace(0, pd.NA)
-            ).fillna(0)
-
-            method_df["pct_of_country_total_native"] = (
-                method_df["total_deposit_amount_native"] / grand_total
-            )
-
-            # sort children by deposit descending too (optional)
-            method_df = method_df.sort_values("total_deposit_amount_native", ascending=False)
-
-            for _, r in method_df.iterrows():
-                rows.append({
-                    "channel": f" {r['method'].replace('-', '.').replace('bank.transfer', 'bank')}",
-                    "total_deposit_amount_native": r["total_deposit_amount_native"],
-                    "deposit_tnx_count": r["deposit_tnx_count"],
-                    "average_deposit_amount_native": r["average_deposit_amount_native"],
-                    "pct_of_country_total_native": r["pct_of_country_total_native"],
-                })
-
-        return pd.DataFrame(rows)
-
-
-    def aggregate_channels_pandas(rows: list[dict]) -> pd.DataFrame:
-        df = pd.DataFrame(rows)
-
-        # Make sure numeric
-        for col in ["deposit_tnx_count", "total_deposit_amount_native", "average_deposit_amount_native"]:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-
-        # Split channel/method
-        df["channel"] = df["method"].astype(str).str.split("/").str[0].str.upper()
-        df["method"] = df["method"].astype(str).str.split("/").str[1]
-
-        return build_channel_method_table(df)
-    
-    df = aggregate_channels_pandas(rows)
-    print(df.head())
-
-    data_rows = []
-    for _, r in df.iterrows():
-        data_rows.append([
-            r["channel"],
-            _fmt_number(r.get("deposit_tnx_count")),
-            _fmt_number(r.get("total_deposit_amount_native")),
-            _fmt_number(r.get("average_deposit_amount_native")),
-            _fmt_pct(r.get("pct_of_country_total_native",0), deno=1),
-        ])
-
-    fixed = [None, 7, 10, 7, 6]
-
-    table = TableFormatter(headers, data_rows, fixed_widths= fixed, style = "ascii", dashed= False).format(max_width=max_width)
-
-    title = f"Country: {country}"
-    return f"{title}\n{table}"
-
-
-async def send_channel_distribution(update: Update, country_groups: dict[str, list[dict]], max_width: int = 72):
-    """
-    Send per-country channel distribution tables (one message per country).
-    """
-    for country, rows in sorted(country_groups.items()):
-        table_text = render_channel_distribution(country, rows, max_width=max_width)
-        safe_text = html.escape(table_text)
-        # split if ever needed
-        chunks = split_table_text(safe_text, max_length=4000)
+        chunks = split_table_text_customize(table_text, first_len=4000)
         for chunk in chunks:
             await update.message.reply_text(
-                f"<pre>{chunk}</pre>",
-                parse_mode=ParseMode.HTML,
+                chunk,
+                parse_mode=ParseMode.MARKDOWN_V2,
                 disable_web_page_preview=True
             )
+def escape_md_v2(text: str) -> str:
+    escape_chars = r"_*[]()~`>#+-=|{}.!"
+    for ch in escape_chars:
+        text = text.replace(ch, "\\" + ch)
+    return text
+
+def render_channel_distribution(country: str, rows: list[dict], max_width: int = 72) -> str:
+    FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩"}
+    CURRENCIES = {"PH": "PHP", "TH": "THB", "BD": "BDT", "PK": "PKR", "ID": "IDR"}
+
+    flag = FLAGS.get(country, "")
+    currency = CURRENCIES.get(country, "")
+
+    def escape_md_v2(text: str) -> str:
+        escape_chars = r"_*[]()~`>#+-=|{}.!"
+        for ch in escape_chars:
+            text = text.replace(ch, "\\" + ch)
+        return text
+
+    title_line   = f"*{escape_md_v2(f'COUNTRY: {country} {flag}')}*"
+    columns_line = escape_md_v2(f"Count | Volume ({currency}) | Avg ({currency}) | Ratio (%)")
+
+    counts  = [str(_fmt_number(r.get("deposit_tnx_count"))) for r in rows]
+    volumes = [str(_fmt_number(r.get("total_deposit_amount_native"))) for r in rows]
+    avgs    = [str(_fmt_number(r.get("average_deposit_amount_native"))) for r in rows]
+    pcts    = [str(_fmt_pct(r.get("pct_of_country_total_native", 0), deno=2)) for r in rows]
+
+    w1 = max((len(x) for x in counts),  default=0)
+    w2 = max((len(x) for x in volumes), default=0)
+    w3 = max((len(x) for x in avgs),    default=0)
+    w4 = max((len(x) for x in pcts),    default=0)
+
+    block_lines = []
+    for i, r in enumerate(rows):
+        method = escape_md_v2(str(r.get("method", "")))
+        num_line = " | ".join([
+            counts[i].rjust(w1),
+            volumes[i].rjust(w2),
+            avgs[i].rjust(w3),
+            pcts[i].rjust(w4),
+        ])
+        # 👉 no extra blank line
+        block_lines.append(f"{method}\n {num_line}")
+
+    code_block = "```\n" + "\n".join(block_lines) + "\n```"
+
+    return "\n".join([title_line, columns_line, "", code_block])
+
+async def send_channel_distribution(update: Update, country_groups: dict[str, list[dict]], max_width: int = 72):
+    for country, rows in sorted(country_groups.items()):
+        text = render_channel_distribution(country, rows, max_width=max_width)
+        await update.message.reply_text(
+            text,
+            parse_mode=ParseMode.MARKDOWN_V2,
+            disable_web_page_preview=True
+        )
 
 def render_dpf_table(country: str, rows: list[dict], max_width: int = 72) -> str:
-    """
-    DPF table (per country): Date, Deposits, Volume (USD), Average (USD)
-    rows must contain: date, deposit_tnx_count, total_deposit_amount_usd, average_deposit_amount_usd
-    """
-    if country == "PH":
-        currency = "PHP"
-    elif country == "TH":
-        currency = "THB"
-    elif country == "BD":
-        currency = "BDT"
-    elif country == "PK":
-        currency = "PKR"
-    elif country == "ID":
-        currency = "IDR"
+    FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩"}
+    CURRENCIES = {"PH": "PHP", "TH": "THB", "BD": "BDT", "PK": "PKR", "ID": "IDR"}
 
-    headers = ["Date", f"Avg. Deposit ({currency})", f"Total Deposit ({currency})", "Weightage"]
-    data_rows = []
-    for r in rows:
-        data_rows.append([
-            str(r.get("date", "")),
-            _fmt_number(r.get("AverageDeposit", 0)),
-            _fmt_number(r.get("TotalDeposit", 0)),
-            _fmt_pct(r.get("Weightage", 0)),
+    flag = FLAGS.get(country, "")
+    currency = CURRENCIES.get(country, "")
+
+    def escape_md_v2(text: str) -> str:
+        escape_chars = r"_*[]()~`>#+-=|{}.!"
+        for ch in escape_chars:
+            text = text.replace(ch, "\\" + ch)
+        return text
+
+    # Title + column description (outside code block)
+    title_line   = f"*{escape_md_v2(f'COUNTRY: {country} {flag}')}*"
+    columns_line = escape_md_v2(f"Date | Avg Deposit ({currency}) | Total Deposit ({currency}) | Weightage")
+
+    # Build row strings
+    dates   = [str(r.get("date", "")) for r in rows]
+    avgs    = [str(_fmt_number(r.get("AverageDeposit", 0))) for r in rows]
+    totals  = [str(_fmt_number(r.get("TotalDeposit", 0))) for r in rows]
+    weights = [str(_fmt_pct(r.get("Weightage", 0))) for r in rows]
+
+    w0 = max((len(x) for x in dates),   default=0)
+    w1 = max((len(x) for x in avgs),    default=0)
+    w2 = max((len(x) for x in totals),  default=0)
+    w3 = max((len(x) for x in weights), default=0)
+
+    lines = []
+    for i in range(len(rows)):
+        line = " | ".join([
+            dates[i].ljust(w0),
+            avgs[i].rjust(w1),
+            totals[i].rjust(w2),
+            weights[i].rjust(w3),
         ])
-    fixed = [None, 10, None, None]
+        lines.append(line)
 
-    table = TableFormatter(headers, data_rows, fixed_widths= fixed, style = "ascii", dashed= False).format(max_width=max_width)
-    title = f"Country: {country}"
-    return f"{title}\n{table}"
+    code_block = "```\n" + "\n".join(lines) + "\n```"
+
+    return "\n".join([title_line, columns_line, "", code_block])
 
 async def send_dpf_tables(update: Update, country_groups: dict[str, list[dict]], max_width: int = 72):
     """Send one DPF table per country."""
+    # for country, rows in sorted(country_groups.items()):
+    #     table_text = render_dpf_table(country, rows, max_width=max_width)
+    #     safe_text = html.escape(table_text)
+    #     for chunk in split_table_text(safe_text, max_length=4000):
+    #         await update.message.reply_text(
+    #             f"<pre>{chunk}</pre>",
+    #             parse_mode=ParseMode.HTML,
+    #             disable_web_page_preview=True
+    #         )
     for country, rows in sorted(country_groups.items()):
-        table_text = render_dpf_table(country, rows, max_width=max_width)
-        safe_text = html.escape(table_text)
-        for chunk in split_table_text(safe_text, max_length=4000):
-            await update.message.reply_text(
-                f"<pre>{chunk}</pre>",
-                parse_mode=ParseMode.HTML,
-                disable_web_page_preview=True
-            )
+        text = render_dpf_table(country, rows, max_width=max_width)
+        await update.message.reply_text(
+            text,
+            parse_mode=ParseMode.MARKDOWN_V2,
+            disable_web_page_preview=True
+        )
