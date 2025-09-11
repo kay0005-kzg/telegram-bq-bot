@@ -651,22 +651,22 @@ class RealTimeBot:
             "dist": {
                 "title": "Deposit Channel Distribution (Specific date)",
                 "lines": [
-                    "/dist a <YYYYMMDD> — all countries",
-                    "/dist <COUNTRY> <YYYYMMDD> — e.g., /dist TH 20250901",
+                    "`/dist a <YYYYMMDD>`: all countries",
+                    "`/dist <COUNTRY> <YYYYMMDD>`: e.g., /dist TH 20250901",
                 ],
             },
             "apf": {
                 "title": "Acquisition Performance (Rolling 3 days)",
                 "lines": [
-                    "/apf a — all countries",
-                    "/apf <COUNTRY> — e.g., /apf TH",
+                    "`/apf a`: all countries",
+                    "`/apf <COUNTRY>`: e.g., /apf TH",
                 ],
             },
             "dpf": {
                 "title": "Deposit Performance (Rolling 3 days)",
                 "lines": [
-                    "/dpf a — all countries",
-                    "/dpf <COUNTRY> — e.g., /dpf PH",
+                    "`/dpf a`: all countries",
+                    "`/dpf <COUNTRY>`: e.g., /dpf PH",
                 ],
             },
         }
@@ -685,7 +685,7 @@ class RealTimeBot:
             section = catalog[cmd]
             parts.append(f"*{section['title']}*")
             for line in section["lines"]:
-                parts.append(f"• `{line}`")
+                parts.append(f"• {line}")
             parts.append("")  # blank line
 
         # Common footer
@@ -745,7 +745,7 @@ class RealTimeBot:
             current_time, date_range = get_date_range_header()
             header_text = (
                 f"📊 *Acquisition Summary* \n"
-                f"⏰ Data Cutoff: Data up to {current_time} (GMT+7) for each day \n"
+                f"⏰ Data up to {current_time} (GMT+7) for each day \n"
                 f"📅 Date range: {date_range[2]} → {date_range[0]}"
             )
             await update.message.reply_text(header_text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
@@ -829,6 +829,8 @@ class RealTimeBot:
             header_text = (
                 f"📊 *Deposit Channel Distribution* \n"
                 f"⏰ Date: {target_date}\n"
+                f"`.nat` ~ `native`\n"
+                f"`.dir` ~ `direct`"
             )
             await update.message.reply_text(header_text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
 
@@ -888,8 +890,9 @@ class RealTimeBot:
             current_time, date_range = get_date_range_header()
             header_text = (
                 f"💸 *Deposit Performance* \n"
-                f"⏰ Data Cutoff: Data up to {current_time} (GMT+7) for each day \n"
+                f"⏰ Data up to {current_time} (GMT+7) for each day \n"
                 f"📅 Date range: {date_range[2]} → {date_range[0]}"
+                "`%` ~ Percent vs. latest day’s total"
             )
             await update.message.reply_text(header_text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
 
