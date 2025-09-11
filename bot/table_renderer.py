@@ -693,7 +693,7 @@ def render_channel_distribution_v3(country: str, rows: list[dict], topn: int = 5
     # --- Prepare strings ---
     channels = [str(r.get("method","")).replace("-", ".")
                 .replace(".bd","").replace(".id","").replace(".pk","")
-                .replace("native","nat").replace("bank.transfer","bank")
+                .replace("bank.transfer","bank")
                 .replace(".ph.nat","").replace("qr.code","qr").replace("direct","dir")
                 for r in rows]
     counts  = [str(_fmt_number(r.get("deposit_tnx_count"))) for r in rows]
@@ -711,7 +711,7 @@ def render_channel_distribution_v3(country: str, rows: list[dict], topn: int = 5
     w3 = max(len("Avg"), *(len(x) for x in avgs))
     w4 = max(len("%"),   *(len(x) for x in ratios))
 
-    header = "  ".join([
+    header = " ".join([
         "Cnt".rjust(w1),
         "Vol".rjust(w2),
         "Avg".rjust(w3),
@@ -725,7 +725,7 @@ def render_channel_distribution_v3(country: str, rows: list[dict], topn: int = 5
         for frag in chan_wrapped[i]:
             lines.append(frag)
         # Numbers line
-        lines.append("  ".join([
+        lines.append(" ".join([
             counts[i].rjust(w1),
             vols[i].rjust(w2),
             avgs[i].rjust(w3),
