@@ -617,7 +617,7 @@ def render_channel_distribution_v2(country: str, rows: list[dict], topn: int = 5
     channels = [str(r.get("method","")).replace("-", ".")
                 .replace(".bd","").replace(".id","").replace(".pk","")
                 .replace("native","nat").replace("bank.transfer","bank")
-                .replace(".ph.nat","").replace("qr.code","qr").replace("direct","dir")
+                .replace(".ph","").replace("qr.code","qr").replace("direct","dir")
                 for r in rows]
     counts  = [str(_fmt_number(r.get("deposit_tnx_count"))) for r in rows]
     vols    = [str(_fmt_number(r.get("total_deposit_amount_native"))) for r in rows]
@@ -635,7 +635,7 @@ def render_channel_distribution_v2(country: str, rows: list[dict], topn: int = 5
     w_avg = max(len("Avg"), *(len(x) for x in avgs   or ["0"]))
     w_pct = max(len("%"),   *(len(x) for x in ratios or ["0"]))
 
-    headerA = "  ".join([
+    headerA = " ".join([
         "#".rjust(w_idx),
         "Cnt".rjust(w_cnt),
         "Vol".rjust(w_vol),
@@ -647,7 +647,7 @@ def render_channel_distribution_v2(country: str, rows: list[dict], topn: int = 5
     # --- Build Table A: one line per row ---
     linesA = [sepA, headerA, sepA]
     for i in range(len(rows)):
-        linesA.append("  ".join([
+        linesA.append(" ".join([
             str(i+1).rjust(w_idx),
             counts[i].rjust(w_cnt),
             vols[i].rjust(w_vol),
