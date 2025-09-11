@@ -1,10 +1,10 @@
 from telegram import Update
 from telegram.constants import ParseMode
-import html
+# import html
 from textwrap import wrap
-from math import ceil
-from collections import defaultdict
-from prettytable import PrettyTable
+# from math import ceil
+# from collections import defaultdict
+# from prettytable import PrettyTable
 # ---------- TableFormatter (auto-fit + wrapping) ----------
 # class TableFormatter:
 #     """
