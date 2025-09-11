@@ -545,7 +545,7 @@ def render_channel_distribution_v1(country: str, rows: list[dict], topn: int = 5
     channels = [str(r.get("method","")).replace("-", ".")
                 .replace(".bd","").replace(".id","").replace(".pk","")
                 .replace("native","nat").replace("bank.transfer","bank")
-                .replace(".ph.nat","").replace("qr.code","qr").replace("direct","dir")
+                .replace(".ph.nat","").replace("qr.code","qr").replace("direct","dir").replace("pay","p")
                 # .replace(".", "")  # keep your normalization
                 for r in rows]
     counts  = [str(_fmt_number(r.get("deposit_tnx_count"))).replace(",","") for r in rows]
@@ -554,7 +554,7 @@ def render_channel_distribution_v1(country: str, rows: list[dict], topn: int = 5
     ratios  = [f"{_to_percent_number(r.get('pct_of_country_total_native',0)):.0f}" for r in rows]
 
     # --- Wrap the first column instead of cutting ---
-    MAX_CHANNEL = 10  # width before wrapping to next line(s)
+    MAX_CHANNEL = 11  # width before wrapping to next line(s)
     chan_wrapped = [wrap(ch, width=MAX_CHANNEL, break_long_words=True, break_on_hyphens=True) or [""] for ch in channels]
 
     # --- Column widths ---
@@ -588,8 +588,6 @@ def render_channel_distribution_v1(country: str, rows: list[dict], topn: int = 5
         blanks = [" " * w1, " " * w2, " " * w3, " " * w4]
         for frag in chan_wrapped[i][1:]:
             lines.append(" ".join([frag.ljust(w0), *blanks]))
-
-        # lines.append(sep)
     # 🔹 Inline-code each line (no triple ``` block)
     # Inside inline code, only the backtick is special — make it safe:
     def inline_code_line(s: str) -> str:
@@ -597,31 +595,160 @@ def render_channel_distribution_v1(country: str, rows: list[dict], topn: int = 5
 
     code_lines = [inline_code_line(l) for l in lines]
 
-    # Title outside code; table as multiple inline-code lines
-    # print("\n".join([title, *code_lines]))
     return "\n".join([title, *code_lines])
-#     return """`----------+------------------------`
-# `Channel   |  Cnt        Vol  Avg  %`
-# `----------+------------------------`
-# `htpay/qr.n|72167 27,973,783  388 50`
-# `at        |                        `
-# `hspay/bank|29263  9,167,148  313 16`
-# `.nat      |                        `
-# `toppay/qr.|27076  7,560,820  279 14`
-# `nat       |                        `
-# `dppay/qr  |11585  4,311,240  372  8`
-# `etpay/qr  | 4753  2,075,695  437  4`
-# `cpay/qr   | 3398  1,457,408  429  3`
-# `dippay/qr | 2845  1,102,622  388  2`
-# `antzpay/pr|  554    989,667 1786  2`
-# `ompt.pay  |                        `
-# `wepay/qr.n| 1590    559,682  352  1`
-# `at        |                        `"""
 
+from textwrap import wrap
+
+def render_channel_distribution_v2(country: str, rows: list[dict], topn: int = 5) -> str:
+    FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩"}
+    CURRENCIES = {"PH":"PHP","TH":"THB","BD":"BDT","PK":"PKR","ID":"IDR"}
+    flag = FLAGS.get(country, "")
+    currency = CURRENCIES.get(country, "")
+
+    def escape_md_v2(text: str) -> str:
+        for ch in r"_*[]()~`>#+-=|{}.!":
+            text = text.replace(ch, "\\"+ch)
+        return text
+
+    raw_title = f"COUNTRY: {country} {flag} - ({currency})"
+    title = stylize(f"*{escape_md_v2(raw_title)}*", style="sans_bold")
+
+    # --- Prepare strings ---
+    channels = [str(r.get("method","")).replace("-", ".")
+                .replace(".bd","").replace(".id","").replace(".pk","")
+                .replace("native","nat").replace("bank.transfer","bank")
+                .replace(".ph.nat","").replace("qr.code","qr").replace("direct","dir")
+                for r in rows]
+    counts  = [str(_fmt_number(r.get("deposit_tnx_count"))) for r in rows]
+    vols    = [str(_fmt_number(r.get("total_deposit_amount_native"))) for r in rows]
+    avgs    = [str(_fmt_number(r.get("average_deposit_amount_native"))) for r in rows]
+    ratios  = [f"{_to_percent_number(r.get('pct_of_country_total_native',0)):.0f}" for r in rows]
+
+    # --- Wrap channel names (for mapping table) ---
+    MAX_CHANNEL = 25
+    chan_wrapped = [wrap(ch, width=MAX_CHANNEL, break_long_words=True, break_on_hyphens=True) or [""] for ch in channels]
+
+    # --- Column widths for Table A (metrics) ---
+    w_idx = max(len("#"), len(str(len(rows))))
+    w_cnt = max(len("Cnt"), *(len(x) for x in counts or ["0"]))
+    w_vol = max(len("Vol"), *(len(x) for x in vols   or ["0"]))
+    w_avg = max(len("Avg"), *(len(x) for x in avgs   or ["0"]))
+    w_pct = max(len("%"),   *(len(x) for x in ratios or ["0"]))
+
+    headerA = "  ".join([
+        "#".rjust(w_idx),
+        "Cnt".rjust(w_cnt),
+        "Vol".rjust(w_vol),
+        "Avg".rjust(w_avg),
+        "%".rjust(w_pct),
+    ])
+    sepA = "-" * len(headerA)
+
+    # --- Build Table A: one line per row ---
+    linesA = [sepA, headerA, sepA]
+    for i in range(len(rows)):
+        linesA.append("  ".join([
+            str(i+1).rjust(w_idx),
+            counts[i].rjust(w_cnt),
+            vols[i].rjust(w_vol),
+            avgs[i].rjust(w_avg),
+            ratios[i].rjust(w_pct),
+        ]))
+
+    # --- Build Table B: index → channel mapping ---
+    headerB = f"{'#'.rjust(w_idx)}  Channel"
+    sepB = "-" * max(len(headerB), w_idx + 2 + MAX_CHANNEL)
+
+    linesB = [sepB, headerB, sepB]
+    for i, frags in enumerate(chan_wrapped, start=1):
+        linesB.append(f"{str(i).rjust(w_idx)}  {frags[0]}")
+        for frag in frags[1:]:
+            linesB.append(f"{' ' * w_idx}  {frag}")
+
+    # --- Inline-code each line so Telegram preserves spacing ---
+    def inline_code_line(s: str) -> str:
+        return f"`{s.replace('`','ˋ')}`"
+
+    codeA = [inline_code_line(l) for l in linesA]
+    codeB = [inline_code_line(l) for l in linesB]
+
+    # Final output
+    return "\n".join([title, *codeA, "", *codeB])
+
+
+def render_channel_distribution_v3(country: str, rows: list[dict], topn: int = 5) -> str:
+    FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩"}
+    CURRENCIES = {"PH":"PHP","TH":"THB","BD":"BDT","PK":"PKR","ID":"IDR"}
+    flag = FLAGS.get(country, "")
+    currency = CURRENCIES.get(country, "")
+
+    def escape_md_v2(text: str) -> str:
+        for ch in r"_*[]()~`>#+-=|{}.!":
+            text = text.replace(ch, "\\"+ch)
+        return text
+
+    raw_title = f"COUNTRY: {country} {flag} - ({currency})"
+    title = stylize(f"*{escape_md_v2(raw_title)}*", style="sans_bold")
+
+    # --- Prepare strings ---
+    channels = [str(r.get("method","")).replace("-", ".")
+                .replace(".bd","").replace(".id","").replace(".pk","")
+                .replace("native","nat").replace("bank.transfer","bank")
+                .replace(".ph.nat","").replace("qr.code","qr").replace("direct","dir")
+                for r in rows]
+    counts  = [str(_fmt_number(r.get("deposit_tnx_count"))) for r in rows]
+    vols    = [str(_fmt_number(r.get("total_deposit_amount_native"))) for r in rows]
+    avgs    = [str(_fmt_number(r.get("average_deposit_amount_native"))) for r in rows]
+    ratios  = [f"{_to_percent_number(r.get('pct_of_country_total_native',0)):.0f}" for r in rows]
+
+    # --- Wrap channel names if too long ---
+    MAX_CHANNEL = 20
+    chan_wrapped = [wrap(ch, width=MAX_CHANNEL, break_long_words=True, break_on_hyphens=True) or [""] for ch in channels]
+
+    # --- Column widths ---
+    w1 = max(len("Cnt"), *(len(x) for x in counts))
+    w2 = max(len("Vol"), *(len(x) for x in vols))
+    w3 = max(len("Avg"), *(len(x) for x in avgs))
+    w4 = max(len("%"),   *(len(x) for x in ratios))
+
+    header = "  ".join([
+        "Cnt".rjust(w1),
+        "Vol".rjust(w2),
+        "Avg".rjust(w3),
+        "%".rjust(w4),
+    ])
+    sep = "-" * len(header)
+
+    lines = [sep, header, sep]
+    for i in range(len(rows)):
+        # Channel line(s)
+        for frag in chan_wrapped[i]:
+            lines.append(frag)
+        # Numbers line
+        lines.append("  ".join([
+            counts[i].rjust(w1),
+            vols[i].rjust(w2),
+            avgs[i].rjust(w3),
+            ratios[i].rjust(w4),
+        ]))
+
+    # Inline-code each line so Telegram preserves spacing
+    def inline_code_line(s: str) -> str:
+        return f"`{s.replace('`','ˋ')}`"
+
+    code_lines = [inline_code_line(l) for l in lines]
+    return "\n".join([title, *code_lines])
 
 async def send_channel_distribution(update: Update, country_groups: dict[str, list[dict]], max_width: int = 35):
     for country, rows in sorted(country_groups.items()):
-        text = render_channel_distribution_v1(country, rows)
+        text = render_channel_distribution_v2(country, rows)
+        # fancy = stylize(text, style = "mono")
+        await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN_V2,
+            disable_web_page_preview=False)
+        
+async def send_channel_distribution_v2(update: Update, country_groups: dict[str, list[dict]], max_width: int = 35):
+    for country, rows in sorted(country_groups.items()):
+        text = render_channel_distribution_v3(country, rows)
         # fancy = stylize(text, style = "mono")
         await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN_V2,
             disable_web_page_preview=False)
