@@ -18,7 +18,7 @@ windows AS (
   FROM params p, UNNEST(GENERATE_ARRAY(0,2)) AS d
 ),
 map_country AS (
-SELECT DISTINCT
+  SELECT DISTINCT
     UPPER(a.name) AS brand,
     CASE 
       WHEN f.reqCurrency = 'THB' THEN 'TH'
@@ -27,17 +27,10 @@ SELECT DISTINCT
       WHEN f.reqCurrency = 'PKR' THEN 'PK'
       WHEN f.reqCurrency = 'IDR' THEN 'ID'
       ELSE NULL
-    END AS country,
+    END AS country
   FROM `kz-dp-prod.kz_pg_to_bq_realtime.ext_funding_tx` f
   LEFT JOIN `kz-dp-prod.kz_pg_to_bq_realtime.account` a ON f.accountId = a.id
 ),
--- map_country AS (
---   SELECT
---     UPPER(Brand) AS brand,
---     ANY_VALUE(Country) AS country
---   FROM `kz-dp-prod.MAPPING.brand_whitelabel_country_folderid_mapping`
---   GROUP BY UPPER(Brand)
--- ),
 
 -- Registrations (NAR) within each day's partial window up to "now"
 view_total AS (
@@ -45,7 +38,7 @@ view_total AS (
     w.date,
     CONCAT(a.gamePrefix, m.apiIdentifier) AS username,
     a.gamePrefix,
-    a.`group`,
+    UPPER(a.`group`) AS `group`,
     UPPER(a.name) AS name,
     mc.country,
     m.deposit1At,
@@ -59,19 +52,19 @@ view_total AS (
     ON m.accountId = a.id
   LEFT JOIN map_country AS mc
     ON mc.brand = UPPER(a.name)
-  -- Assign each row to the correct day-window
   CROSS JOIN windows w
   WHERE m.registerAt >= w.start_ts
     AND m.registerAt <  w.end_ts
 ),
 
--- All deposits (for global ranking per user), then we filter by each window later
+-- All deposits (for global ranking per user), then filter by each window later
 total_deposit AS (
   SELECT DISTINCT
     CONCAT(a.gamePrefix, m.apiIdentifier) AS username,
     f.memberId,
     f.completedAt,
-    UPPER(a.name) AS brand,
+    UPPER(a.name)   AS brand,
+    UPPER(a.`group`) AS `group`,
     f.reqCurrency,
     f.id,
     f.method,
@@ -99,11 +92,12 @@ ranked_deposit AS (
   FROM total_deposit td
 ),
 
--- For each day-window, keep deposits whose completedAt falls inside that day's partial window
+-- For each day-window, keep deposits with completedAt inside that day's partial window
 windowed_deposit AS (
   SELECT
     w.date,
     rd.brand,
+    rd.`group`,
     rd.country,
     rd.rank_deposit
   FROM ranked_deposit rd
@@ -116,32 +110,37 @@ consolidated_deposit AS (
   SELECT
     date,
     brand,
+    `group`,
     country,
     SUM(CASE WHEN rank_deposit = 1 THEN 1 ELSE 0 END) AS FTD,
     SUM(CASE WHEN rank_deposit = 2 THEN 1 ELSE 0 END) AS STD,
     SUM(CASE WHEN rank_deposit = 3 THEN 1 ELSE 0 END) AS TTD
   FROM windowed_deposit
-  GROUP BY date, brand, country
+  GROUP BY date, brand, `group`, country
 ),
 
 consolidated_nar AS (
   SELECT
     vt.date,
+    vt.`group`,
     vt.name AS brand,
     vt.country,
     COUNT(DISTINCT vt.username) AS NAR
   FROM view_total vt
-  GROUP BY vt.date, vt.name, vt.country
+  GROUP BY vt.date, vt.`group`, vt.name, vt.country
 ),
- brand_total AS (
-    SELECT 
-        brand,
-        SUM(nar) AS total_nar   -- hoặc SUM(total_deposit) nếu có
-    FROM consolidated_nar
-    GROUP BY brand
+
+brand_total AS (
+  SELECT 
+    brand,
+    SUM(NAR) AS total_nar
+  FROM consolidated_nar
+  GROUP BY brand
 )
+
 SELECT
   cn.date,
+  cn.`group`,
   cn.brand,
   cn.country,
   cn.NAR,
@@ -150,10 +149,11 @@ SELECT
   COALESCE(cd.TTD, 0) AS TTD
 FROM consolidated_nar cn
 LEFT JOIN consolidated_deposit cd
-  ON cn.date = cd.date
- AND cn.brand = cd.brand
+  ON cn.date    = cd.date
+ AND cn.brand   = cd.brand
+ AND cn.`group` = cd.`group`
  AND cn.country = cd.country
 JOIN brand_total bt
   ON cn.brand = bt.brand
 WHERE @target_country IS NULL OR cn.country = @target_country
-ORDER BY bt.total_nar DESC, cn.date DESC
+ORDER BY bt.total_nar DESC, cn.date DESC;

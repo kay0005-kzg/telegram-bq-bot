@@ -748,7 +748,7 @@ class RealTimeBot:
                 f"⏰ Data up to {current_time} (GMT+7) for each day \n"
                 f"📅 Date range: {date_range[2]} → {date_range[0]}"
             )
-            await update.message.reply_text(header_text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
+            # await update.message.reply_text(header_text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
 
             await send_apf_tables(update, country_groups, max_width=52, max_length=2400)
 
@@ -894,7 +894,7 @@ class RealTimeBot:
                 f"📅 Date range: {date_range[2]} → {date_range[0]}\n"
                 "`%` ~ Percent vs. latest day’s total"
             )
-            await update.message.reply_text(header_text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
+            # await update.message.reply_text(header_text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
 
             await send_dpf_tables(update, country_groups, max_width=52)
 

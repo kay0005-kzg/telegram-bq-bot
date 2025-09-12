@@ -14,6 +14,8 @@ base AS (
     f.netAmount,
     f.netCurrency,
     f.reqCurrency,
+    UPPER(a.name)  AS brand,           -- ✅ brand = account.name
+    UPPER(a.`group`) AS `group`,       -- ✅ group = account.group
     CASE 
       WHEN f.reqCurrency = 'THB' THEN 'TH'
       WHEN f.reqCurrency = 'PHP' THEN 'PH'
@@ -23,6 +25,8 @@ base AS (
       ELSE NULL
     END AS country
   FROM `kz-dp-prod.kz_pg_to_bq_realtime.ext_funding_tx` AS f
+  LEFT JOIN `kz-dp-prod.kz_pg_to_bq_realtime.account` a 
+    ON f.accountId = a.id
   CROSS JOIN params p
   WHERE f.type   = 'deposit'
     AND f.status = 'completed'
@@ -36,26 +40,30 @@ capped AS (
   SELECT
     local_date AS date,
     country,
+    brand,
+    `group`,
     netAmount
   FROM base, params p
   WHERE local_date BETWEEN DATE_SUB(p.today_date, INTERVAL 2 DAY) AND p.today_date
-    AND local_time < p.now_time          -- cap by local time
-    AND netAmount IS NOT NULL            -- drop rows without FX
+    AND local_time < p.now_time
+    AND netAmount IS NOT NULL
 ),
 
--- Aggregate per day
+-- Aggregate per day, per group, per brand, per country
 consolidated AS (
   SELECT
     date,
     country,
+    `group`,
+    brand,
     AVG(netAmount) AS AverageDeposit,
     SUM(netAmount) AS TotalDeposit
   FROM capped
-  GROUP BY date, country
+  GROUP BY date, country, `group`, brand
 ),
 
 today_total AS (
-  SELECT country, TotalDeposit AS TotalToday
+  SELECT country, `group`, brand, TotalDeposit AS TotalToday
   FROM consolidated, params p
   WHERE date = p.today_date
 )
@@ -63,10 +71,15 @@ today_total AS (
 SELECT
   c.date,
   c.country,
+  c.`group`,
+  c.brand,
   c.AverageDeposit,
-  ROUND(c.TotalDeposit,0) AS TotalDeposit,
+  ROUND(c.TotalDeposit, 0) AS TotalDeposit,
   ROUND(c.TotalDeposit / NULLIF(t.TotalToday, 0), 4) AS Weightage
 FROM consolidated c 
-LEFT JOIN today_total t ON c.country = t.country
+LEFT JOIN today_total t 
+  ON c.country = t.country
+ AND c.`group` = t.`group`
+ AND c.brand   = t.brand
 WHERE @target_country IS NULL OR c.country = @target_country
-ORDER BY c.date DESC;
+ORDER BY c.date DESC, c.TotalDeposit DESC;
