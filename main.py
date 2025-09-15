@@ -706,6 +706,11 @@ class RealTimeBot:
         # user = update.effective_user
         # if not user or user.id not in self.registered_users:
         #     return await update.message.reply_text("⚠️ Please register first by contacting the admin.")
+        def normalize_brand(b):
+            KEEP_BRANDS = {"96G", "BLG", "WDB"}
+            s = "" if b is None else str(b).strip()
+            s = s.rstrip("12").upper()      # optional: drop trailing 1/2, normalize case
+            return s if s in KEEP_BRANDS else "KZO"
         
         if not await self._ensure_allowed(update, "apf"):
             return
@@ -735,6 +740,12 @@ class RealTimeBot:
 
             country_groups = {}
             for row in rows:
+                row["group"] = str(row["group"]).replace("PH96G1", "96G1")\
+                        .replace("PHBLG", "BLG")\
+                        .replace("1", "").replace("2", "")\
+                        .replace("KZG", "KZO").replace("PHK", "KZO").replace("IDK", "KZO").replace("PKK", "KZO")
+                
+                row["group"] = normalize_brand(row["group"])
                 country = row.get("country", "Unknown")
                 if country not in country_groups:
                     country_groups[country] = []
@@ -843,6 +854,11 @@ class RealTimeBot:
             )
 
     async def dpf_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        def normalize_brand(b):
+            KEEP_BRANDS = {"96G", "BLG", "WDB"}
+            s = "" if b is None else str(b).strip()
+            s = s.rstrip("12").upper()      # optional: drop trailing 1/2, normalize case
+            return s if s in KEEP_BRANDS else "KZO"
         # self._log_event({
         # **self._base_payload(update),
         # "event": "command",
@@ -882,6 +898,12 @@ class RealTimeBot:
 
             country_groups: dict[str, list[dict]] = {}
             for r in rows:
+                r["group"] = str(r["group"]).replace("PH96G1", "96G1")\
+                        .replace("PHBLG", "BLG")\
+                        .replace("1", "").replace("2", "")\
+                        .replace("KZG", "KZO").replace("PHK", "KZO").replace("IDK", "KZO").replace("PKK", "KZO")
+                
+                r["group"] = normalize_brand(r["group"])
                 c = (r.get("country") or "") or "Unknown"
                 country_groups.setdefault(c, []).append(r)
 
@@ -976,6 +998,8 @@ class RealTimeBot:
                 "Type /help to see available commands."
             )
 
+
+    
     def run(self):
         application = ApplicationBuilder().token(self.config.TELEGRAM_TOKEN).build()
         # application.add_handler(MessageHandler("who", self.who_command))  # <-- add this

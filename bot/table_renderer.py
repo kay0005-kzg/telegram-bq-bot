@@ -364,7 +364,7 @@ from collections import defaultdict
 
 # Inline-code helper: no newlines allowed inside
 def inline_code_line(s: str) -> str:
-    return f"`{s.replace('`','ˋ')}`"
+    return f"`s`"
 
 # def inline_code_line_num(s: str) -> str:
 #     """
@@ -438,13 +438,18 @@ def render_apf_table_v2(country, rows, max_width=72, brand=False):
         f = str(f)
         s = str(s)
         t = str(t)
+        _d = count_separators(d)
+        _n = count_separators(n)
+        _f = count_separators(f)
+        _s = count_separators(s)
+        _t = count_separators(t)
         print(d, n, f, s, t)
         return " ".join([
-            d.ljust(w0),
-            n.rjust(w1),
-            f.rjust(w2),
-            s.rjust(w3),
-            t.rjust(w4),
+            replace_spacing(d.ljust(w0), x0, _d),
+            replace_spacing(n.rjust(w1), x1, _n),
+            replace_spacing(f.rjust(w2), x2, _f),
+            replace_spacing(s.rjust(w3), x3, _s),
+            replace_spacing(t.rjust(w4), x4, _t),
         ])
 
     header = fmt_row("Date", "NAR", "FTD", "STD", "TTD")
@@ -455,13 +460,18 @@ def render_apf_table_v2(country, rows, max_width=72, brand=False):
 
     if not brand:
         title = stylize(f"*{escape_md_v2(f'COUNTRY: {country} {flag}')}*", style="sans_bold")
-        subtitle = "\n" + escape_md_v2(f"Acquisition Summary (up to {current_time} GMT+7)")
+
+        if list(brand_groups.keys())[0] == "TOTAL":
+            subtitle = "\n" + escape_md_v2(f"Acquisition Summary by Total \n(up to {current_time} GMT+7)")
+        else:
+            subtitle = "\n" + escape_md_v2(f"Acquisition Summary by Brand \n(up to {current_time} GMT+7)")
+
         title_line = title + subtitle
         parts = [title_line]
 
         # Show separator + header ONCE (above first brand)
         parts.append(inline_code_line(sep))
-        parts.append(backtick_with_trailing_spaces(inline_code_line(header), list_seperators))
+        parts.append(wrap_separators(inline_code_line(header)))
         parts.append(inline_code_line(sep))
     else:
         parts = []
@@ -473,7 +483,11 @@ def render_apf_table_v2(country, rows, max_width=72, brand=False):
             parts.append("")  # blank line between brands
         first = False
 
-        parts.append(stylize(f"*{escape_md_v2(str(brand_name))}*", style="sans_bold"))
+        if brand == False:
+            parts.append(stylize(f"*{escape_md_v2(str("--" + brand_name + "--"))}*", style="sans_bold"))
+
+        if brand == True:
+            parts.append(stylize(f"*{escape_md_v2(str(brand_name))}*", style="sans_bold"))
 
         for r in items:
             parts.append(
@@ -687,8 +701,6 @@ async def send_apf_tables(update: Update, country_groups, max_width=72, max_leng
         key=lambda x: x[0]
     ):
         
-   
-
         # split rows by GROUP within this country
         groups = defaultdict(list)
         for r in rows:
@@ -702,7 +714,7 @@ async def send_apf_tables(update: Update, country_groups, max_width=72, max_leng
         for gname, g_rows in groups_sorted:
             msg = render_group_then_brands(country, gname, g_rows, max_width=max_width)
             
-            for chunk in split_table_text_customize(msg, first_len=max_length):
+            for chunk in split_table_text_customize(msg, first_len=1000):
                 # safe_chunk = escape_md_v2(chunk)
                 await update.message.reply_text(
                     chunk,
@@ -712,7 +724,7 @@ async def send_apf_tables(update: Update, country_groups, max_width=72, max_leng
 
         # --- country GRAND TOTAL by date (all groups/brands) ---
         total_msg = render_country_total(country, rows, max_width=max_width)
-        for chunk in split_table_text_customize(total_msg, first_len=max_length):
+        for chunk in split_table_text_customize(total_msg, first_len=1000):
             # safe_chunk = escape_md_v2(chunk)
             await update.message.reply_text(
                 chunk,
@@ -816,7 +828,7 @@ def render_channel_distribution_v1(country: str, rows: list[dict], topn: int = 5
         "Avg".rjust(w3),
         "%".rjust(w4),
     ])
-    sep = "-" * len(header)
+    sep = "-".join(["-" * len(header)])
 
     # Build plain lines
     lines = [sep, header, sep]
@@ -859,10 +871,10 @@ def render_channel_distribution_v100(country: str, rows: list[dict], topn: int =
     title = stylize(f"*{escape_md_v2(raw_title)}*", style="sans_bold")
 
     # --- Prepare strings ---
-    channels = [str(r.get("method","")).replace("-", ".")
-                .replace(".bd","").replace(".id","").replace(".pk","")
-                .replace("native","nat").replace("bank.transfer","bank")
-                .replace(".ph","").replace("qr.code","qr").replace("direct","dir")
+    channels = [str(r.get("method",""))
+                .replace("-bd","").replace("-id","").replace("-pk","")
+                .replace("native","nat").replace("bank-transfer","bank")
+                .replace("-ph","").replace("qr-code","qr").replace("direct","dir")
                 for r in rows]
     counts  = [str(_fmt_number(r.get("deposit_tnx_count"))) for r in rows]
     vols    = [str(_fmt_number(r.get("total_deposit_amount_native"))) for r in rows]
@@ -876,49 +888,62 @@ def render_channel_distribution_v100(country: str, rows: list[dict], topn: int =
     # --- Column widths for Table A (metrics) ---
     w_idx = max(len("#"), len(str(len(rows))))
     w_cnt = max(len("Cnt"), *(len(x) for x in counts or ["0"]))
+    x1 = max(count_separators("Cnt"), *(count_separators(x) for x in counts or ["0"]))
     w_vol = max(len("Vol"), *(len(x) for x in vols   or ["0"]))
+    x2 = max(count_separators("Vol"), *(count_separators(x) for x in vols   or ["0"]))
     w_avg = max(len("Avg"), *(len(x) for x in avgs   or ["0"]))
+    x3 = max(count_separators("Avg"), *(count_separators(x) for x in avgs   or ["0"]))
     w_pct = max(len("%"),   *(len(x) for x in ratios or ["0"]))
 
     headerA = " ".join([
         "#".rjust(w_idx),
-        "Cnt".rjust(w_cnt),
-        "Vol".rjust(w_vol),
-        "Avg".rjust(w_avg),
-        "%".rjust(w_pct),
+        "Cnt".ljust(w_cnt),
+        "Vol".ljust(w_vol),
+        "Avg".ljust(w_avg),
+        "%".ljust(w_pct),
     ])
     sepA = "-" * len(headerA)
 
+    # --- Inline-code each line so Telegram preserves spacing ---
+    def inline_code_line(s: str) -> str:
+        return f"`{s.replace('`','ˋ')}`"
+    
     # --- Build Table A: one line per row ---
-    linesA = [sepA, headerA, sepA]
+    def inline_code(s: str) -> str:
+        return f"`{s}`"
+    headerA = [inline_code(sepA), inline_code(headerA), inline_code(sepA)]
+
+    linesA = []
     for i in range(len(rows)):
+        _count = count_separators(counts[i])
+        _vols = count_separators(vols[i])
+        _avgs = count_separators(avgs[i])
+        
         linesA.append(" ".join([
             str(i+1).rjust(w_idx),
-            counts[i].rjust(w_cnt),
-            vols[i].rjust(w_vol),
-            avgs[i].rjust(w_avg),
+            replace_spacing(counts[i].rjust(w_cnt), x1, _count),
+            replace_spacing(vols[i].rjust(w_vol), x2, _vols),
+            replace_spacing(avgs[i].rjust(w_avg), x3, _avgs),
             ratios[i].rjust(w_pct),
         ]))
 
     # --- Build Table B: index → channel mapping ---
     headerB = f"{'#'.rjust(w_idx)}  Channel"
-    sepB = "-" * max(len(headerB), w_idx + 2 + MAX_CHANNEL)
 
-    linesB = [sepB, headerB, sepB]
+    sublinesB = [inline_code(sepA), inline_code(headerB), inline_code(sepA)]
+    linesB = []
     for i, frags in enumerate(chan_wrapped, start=1):
         linesB.append(f"{str(i).rjust(w_idx)}  {frags[0]}")
         for frag in frags[1:]:
-            linesB.append(f"{' ' * w_idx}  {frag}")
+            linesB.append(f"{'   ' * w_idx}  {frag}")
 
-    # --- Inline-code each line so Telegram preserves spacing ---
-    def inline_code_line(s: str) -> str:
-        return f"`{s.replace('`','ˋ')}`"
-
-    codeA = [inline_code_line(l) for l in linesA]
-    codeB = [inline_code_line(l) for l in linesB]
+    codeA = [wrap_separators(inline_code_line(l)) for l in linesA]
+    codeB = [escape_md_v2(l) for l in linesB]
 
     # Final output
-    return "\n".join([title, *codeA, "", *codeB])
+    # headerA = "\n".join(headerA)
+    # sublinesB = "\n".join(sublinesB)
+    return "\n".join([title, *headerA, *codeA, "", *sublinesB, *codeB])
 
 # def render_channel_distribution_v2(country: str, rows: list[dict], topn: int = 5) -> str:
 #     from textwrap import wrap
@@ -1443,6 +1468,12 @@ def inline_code_line(s: str) -> str:
 
 # ------- DPF core table: mirrors render_apf_table -------
 def render_dpf_table_official(country, rows, max_width=72, brand=False):
+    # def replace_spacing(s: str, max_sep: int, cur_sep: int):
+    #     if cur_sep < max_sep:
+    #         dif = max_sep - cur_sep
+    #         return s.replace(f"`{" "*dif}`")
+    #     else:
+    #         return s
     FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩"}
     CURRENCIES = {"TH":"THB","PH":"PHP","BD":"BDT","PK":"PKR","ID":"IDR"}
     flag     = FLAGS.get(country, "")
@@ -1496,7 +1527,7 @@ def render_dpf_table_official(country, rows, max_width=72, brand=False):
 
     w1 = max(len("Avg"),   *(len(s) for s in avgs_all))  if avgs_all else len("Avg")
     x1 = max(count_separators("Avg"), *(count_separators(x) for x in avgs_all))
-
+    
     w2 = max(len("Total"), *(len(s) for s in totals_all))if totals_all else len("Total")
     x2 = max(count_separators("Total"), *(count_separators(x) for x in totals_all))
 
@@ -1548,10 +1579,15 @@ def render_dpf_table_official(country, rows, max_width=72, brand=False):
         parts.append(stylize(f"*{escape_md_v2(str(brand_name))}*", style="sans_bold"))
         for r in filter(lambda x: x["brand"] == brand_name, prepped):
             d, a, t, w = _row_strs(r)
+
+            num_sep_a = count_separators(a)
+            num_sep_t = count_separators(t)
+            print(num_sep_a, a, replace_spacing(a.rjust(w1), max_sep=x1, cur_sep=num_sep_a))
+            
             parts.append(wrap_separators(inline_code_line(fmt_row(
             d.ljust(w0),
-            a.rjust(w1),
-            t.rjust(w2),
+            replace_spacing(a.rjust(w1), max_sep=x1, cur_sep=num_sep_a),
+            replace_spacing(t.rjust(w2), max_sep=x2, cur_sep=num_sep_t),
             w.rjust(w3)))))
 
     print(parts)
@@ -1883,11 +1919,13 @@ def render_dpf_table_v2(country, rows, max_width=72, brand=False):
     flag     = FLAGS.get(country, "")
     currency = CURRENCIES.get(country, "")
 
+    import pandas as pd
+
     # group by brand
     brand_groups = defaultdict(list)
     for r in rows:
         brand_groups[r.get("brand", "Unknown")].append(r)
-
+        
     # collapse rows by date within each brand; compute Weightage vs latest day per brand
     prepped = []
     for b, items in brand_groups.items():
@@ -1940,12 +1978,22 @@ def render_dpf_table_v2(country, rows, max_width=72, brand=False):
     x3 = max(count_separators("%"),     *(count_separators(x) for x in w_all))      if w_all      else count_separators("%")
 
     # widths = (w0, w1, w2, w3)
-    # num_seps = (x0, x1, x2, x3)
-    # for header trailing-space trick: merge first two cols’ separators like APF
     list_separators = [x0 + x1, x2, x3, 0]
 
     # plain-space aligned row (no figure spaces)
     def fmt_row(d, a, t, w):
+        d = str(d); a = str(a); t = str(t); w = str(w)
+        _a = count_separators(a)
+        _t = count_separators(t)
+
+        return " ".join([
+            d.ljust(w0),
+            replace_spacing(a.rjust(w1), max_sep=x1, cur_sep=_a),
+            replace_spacing(t.rjust(w2), max_sep=x2, cur_sep=_t),
+            w.rjust(w3),
+        ])
+    
+    def fmt_header_row(d, a, t, w):
         d = str(d); a = str(a); t = str(t); w = str(w)
         return " ".join([
             d.ljust(w0),
@@ -1953,21 +2001,27 @@ def render_dpf_table_v2(country, rows, max_width=72, brand=False):
             t.rjust(w2),
             w.rjust(w3),
         ])
-
+    
     # header + horizontal sep built from real widths
-    header = fmt_row("Date", "Avg", "Total", "%")
+    header = fmt_header_row("Date", "Avg", "Total", "%")
     sep    = "-".join(["-" * w0, "-" * w1, "-" * w2, "-" * w3])
 
     # --- build output (APF style) ---
     current_time, _ = get_date_range_header()
     title    = stylize(f"*{escape_md_v2(f'COUNTRY: {country} {flag} ({currency})')}*", style="sans_bold")
-    subtitle = "\n" + escape_md_v2(f"Deposit Performance (up to {current_time} GMT+7)")
+    print("BRAND GROUPS", brand_groups)
+    print(list(brand_groups.keys()))
+    
+    if list(brand_groups.keys())[0] == "TOTAL":
+        subtitle = "\n" + escape_md_v2(f"Deposit Performance by Total \n(up to {current_time} GMT+7)")
+    else:
+        subtitle = "\n" + escape_md_v2(f"Deposit Performance by Brand \n(up to {current_time} GMT+7)")
 
     parts = []
     if not brand:
         parts.append(title + subtitle)
         parts.append(inline_code_line(sep))
-        parts.append(backtick_with_trailing_spaces(inline_code_line(header), list_separators))
+        parts.append(inline_code_line(header))
         parts.append(inline_code_line(sep))
 
     # sort brands by TotalDeposit DESC
@@ -1983,11 +2037,15 @@ def render_dpf_table_v2(country, rows, max_width=72, brand=False):
             parts.append("")  # blank line between brands
         first = False
 
+        if brand == False:
+            parts.append(stylize(f"*{escape_md_v2(str("--" + brand_name + "--"))}*", style="sans_bold"))
 
-        parts.append(stylize(f"*{escape_md_v2(str(brand_name))}*", style="sans_bold"))
-
+        if brand == True:
+            parts.append(stylize(f"*{escape_md_v2(str(brand_name))}*", style="sans_bold"))
+        
         # rows for this brand (already collapsed in prepped)
         for r in filter(lambda x: x["brand"] == brand_name, prepped):
+ 
             d, a, t, w = _row_strs(r)
             line = fmt_row(d, escape_md_v2(a), escape_md_v2(t), escape_md_v2(w))
 
@@ -1998,7 +2056,15 @@ def render_dpf_table_v2(country, rows, max_width=72, brand=False):
 
     return "\n".join(parts)
 
-
+def replace_spacing(s: str, max_sep: int, cur_sep: int):
+    print(cur_sep, max_sep, s)
+    if cur_sep < max_sep:
+        dif = max_sep - cur_sep
+        print(s.replace(" "*dif, f"`{" "*dif}`"), 1)
+        return s.replace(" "*dif, f"{":"*dif}", 1)
+    else:
+        return s
+    
 # ------- aggregate by date (used for group summary / country total) -------
 def _aggregate_dpf_by_date(rows: list[dict], pseudo_brand: str):
     """Per-date totals across given rows; averages averaged; % vs latest date."""
@@ -2057,16 +2123,16 @@ async def send_dpf_tables(update: Update, country_groups: dict[str, list[dict]],
         # one message per group (group summary + brands)
         for gname, g_rows in groups_sorted:
             msg = render_dpf_group_then_brands(country, gname, g_rows, max_width=max_width)
-            for chunk in split_table_text_customize(msg, first_len=4000):
+            for chunk in split_table_text_customize(msg, first_len=1100):
                 await update.message.reply_text(
                 chunk, 
-                parse_mode=ParseMode.MARKDOWN_V2, 
+                parse_mode=ParseMode.MARKDOWN_V2,
                 disable_web_page_preview=True
                 )
 
         # final country GRAND TOTAL by date
         total_msg = render_dpf_country_total(country, rows, max_width=max_width)
-        for chunk in split_table_text_customize(total_msg, first_len=4000):
+        for chunk in split_table_text_customize(total_msg, first_len=800):
             await update.message.reply_text(
             chunk, 
             parse_mode=ParseMode.MARKDOWN_V2, 
@@ -2093,6 +2159,9 @@ def wrap_separators(s: str) -> str:
             i += 1
         elif ch == ",":
             result.append("`\\,`")
+            i += 1
+        elif ch == ":":
+            result.append("` `")
             i += 1
         else:
             result.append(ch)
