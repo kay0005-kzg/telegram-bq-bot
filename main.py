@@ -703,9 +703,9 @@ class RealTimeBot:
         # "command": update.effective_message.text,   # logs "/help" or "/start"
         # })
 
-        user = update.effective_user
-        if not user or user.id not in self.registered_users:
-            return await update.message.reply_text("⚠️ Please register first by contacting the admin.")
+        # user = update.effective_user
+        # if not user or user.id not in self.registered_users:
+        #     return await update.message.reply_text("⚠️ Please register first by contacting the admin.")
         
         if not await self._ensure_allowed(update, "apf"):
             return
@@ -764,9 +764,9 @@ class RealTimeBot:
           /dist a 20250901
           /dist TH 20250901
         """
-        user = update.effective_user
-        if not user or user.id not in self.registered_users:
-            return await update.message.reply_text("⚠️ Please register first by contacting the admin.")
+        # user = update.effective_user
+        # if not user or user.id not in self.registered_users:
+        #     return await update.message.reply_text("⚠️ Please register first by contacting the admin.")
         
         if not await self._ensure_allowed(update, "dist"):
             return
@@ -849,9 +849,9 @@ class RealTimeBot:
         # "command": update.effective_message.text,   # logs "/help" or "/start"
         # })
 
-        user = update.effective_user
-        if not user or user.id not in self.registered_users:
-            return await update.message.reply_text("⚠️ Please register first by contacting the admin.")
+        # user = update.effective_user
+        # if not user or user.id not in self.registered_users:
+        #     return await update.message.reply_text("⚠️ Please register first by contacting the admin.")
         
         if not await self._ensure_allowed(update, "dpf"):
             return

@@ -920,319 +920,319 @@ def render_channel_distribution_v100(country: str, rows: list[dict], topn: int =
     # Final output
     return "\n".join([title, *codeA, "", *codeB])
 
-def render_channel_distribution_v2(country: str, rows: list[dict], topn: int = 5) -> str:
-    from textwrap import wrap
+# def render_channel_distribution_v2(country: str, rows: list[dict], topn: int = 5) -> str:
+#     from textwrap import wrap
 
-    FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩"}
-    CURRENCIES = {"PH":"PHP","TH":"THB","BD":"BDT","PK":"PKR","ID":"IDR"}
-    flag = FLAGS.get(country, "")
-    currency = CURRENCIES.get(country, "")
+#     FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩"}
+#     CURRENCIES = {"PH":"PHP","TH":"THB","BD":"BDT","PK":"PKR","ID":"IDR"}
+#     flag = FLAGS.get(country, "")
+#     currency = CURRENCIES.get(country, "")
 
-    def escape_md_v2(text: str) -> str:
-        for ch in r"_*[]()~`>#+-=|{}.!":
-            text = text.replace(ch, "\\"+ch)
-        return text
+#     def escape_md_v2(text: str) -> str:
+#         for ch in r"_*[]()~`>#+-=|{}.!":
+#             text = text.replace(ch, "\\"+ch)
+#         return text
 
-    # --- Title (same style as your existing function) ---
-    raw_title = f"COUNTRY: {country} {flag} - ({currency})"
-    title = stylize(f"*{escape_md_v2(raw_title)}*", style="sans_bold")
+#     # --- Title (same style as your existing function) ---
+#     raw_title = f"COUNTRY: {country} {flag} - ({currency})"
+#     title = stylize(f"*{escape_md_v2(raw_title)}*", style="sans_bold")
 
-    # --- Prepare/normalize strings ---
-    channels = [
-        str(r.get("method","")).replace("-", ".")
-                               .replace(".bd","").replace(".id","").replace(".pk","").replace(".ph","")
-                               .replace("native","nat").replace("bank.transfer","bank")
-                               .replace("qr.code","qr").replace("direct","dir")
-        for r in rows
-    ]
-    counts  = [str(_fmt_number(r.get("deposit_tnx_count"))) for r in rows]
-    vols    = [str(_fmt_number(r.get("total_deposit_amount_native"))) for r in rows]
-    avgs    = [str(_fmt_number(r.get("average_deposit_amount_native"))) for r in rows]
-    ratios  = [f"{_to_percent_number(r.get('pct_of_country_total_native', 0)):.0f}" for r in rows]
+#     # --- Prepare/normalize strings ---
+#     channels = [
+#         str(r.get("method","")).replace("-", ".")
+#                                .replace(".bd","").replace(".id","").replace(".pk","").replace(".ph","")
+#                                .replace("native","nat").replace("bank.transfer","bank")
+#                                .replace("qr.code","qr").replace("direct","dir")
+#         for r in rows
+#     ]
+#     counts  = [str(_fmt_number(r.get("deposit_tnx_count"))) for r in rows]
+#     vols    = [str(_fmt_number(r.get("total_deposit_amount_native"))) for r in rows]
+#     avgs    = [str(_fmt_number(r.get("average_deposit_amount_native"))) for r in rows]
+#     ratios  = [f"{_to_percent_number(r.get('pct_of_country_total_native', 0)):.0f}" for r in rows]
 
-    # apply topn to both tables
-    n = min(topn if isinstance(topn, int) and topn > 0 else len(rows), len(rows))
-    channels_disp = channels[:n]
-    counts_disp   = counts[:n]
-    vols_disp     = vols[:n]
-    avgs_disp     = avgs[:n]
-    ratios_disp   = ratios[:n]
+#     # apply topn to both tables
+#     n = min(topn if isinstance(topn, int) and topn > 0 else len(rows), len(rows))
+#     channels_disp = channels[:n]
+#     counts_disp   = counts[:n]
+#     vols_disp     = vols[:n]
+#     avgs_disp     = avgs[:n]
+#     ratios_disp   = ratios[:n]
 
-    # ---------- TABLE A (metrics) ----------
-    # widths from rendered strings we will print
-    w_idx = max(len("#"), len(str(n)))
-    w_cnt = max(len("Cnt"), *(len(x) for x in (counts_disp or ["0"])))
-    w_vol = max(len("Vol"), *(len(x) for x in (vols_disp   or ["0"])))
-    w_avg = max(len("Avg"), *(len(x) for x in (avgs_disp   or ["0"])))
-    w_pct = max(len("%"),   *(len(x) for x in (ratios_disp or ["0"])))
+#     # ---------- TABLE A (metrics) ----------
+#     # widths from rendered strings we will print
+#     w_idx = max(len("#"), len(str(n)))
+#     w_cnt = max(len("Cnt"), *(len(x) for x in (counts_disp or ["0"])))
+#     w_vol = max(len("Vol"), *(len(x) for x in (vols_disp   or ["0"])))
+#     w_avg = max(len("Avg"), *(len(x) for x in (avgs_disp   or ["0"])))
+#     w_pct = max(len("%"),   *(len(x) for x in (ratios_disp or ["0"])))
 
-    # thousands-separator counts for in-cell figspace padding
-    x_idx = max(count_separators("#"), *(count_separators(str(i+1)) for i in range(n))) if n else count_separators("#")
-    x_cnt = max(count_separators("Cnt"), *(count_separators(x) for x in counts_disp))   if n else count_separators("Cnt")
-    x_vol = max(count_separators("Vol"), *(count_separators(x) for x in vols_disp))     if n else count_separators("Vol")
-    x_avg = max(count_separators("Avg"), *(count_separators(x) for x in avgs_disp))     if n else count_separators("Avg")
-    x_pct = max(count_separators("%"),   *(count_separators(x) for x in ratios_disp))   if n else count_separators("%")
+#     # thousands-separator counts for in-cell figspace padding
+#     x_idx = max(count_separators("#"), *(count_separators(str(i+1)) for i in range(n))) if n else count_separators("#")
+#     x_cnt = max(count_separators("Cnt"), *(count_separators(x) for x in counts_disp))   if n else count_separators("Cnt")
+#     x_vol = max(count_separators("Vol"), *(count_separators(x) for x in vols_disp))     if n else count_separators("Vol")
+#     x_avg = max(count_separators("Avg"), *(count_separators(x) for x in avgs_disp))     if n else count_separators("Avg")
+#     x_pct = max(count_separators("%"),   *(count_separators(x) for x in ratios_disp))   if n else count_separators("%")
 
-    widths_A = (w_idx, w_cnt, w_vol, w_avg, w_pct)
-    seps_A   = (x_idx, x_cnt, x_vol, x_avg, x_pct)
-    sep_line = "—" * 20
+#     widths_A = (w_idx, w_cnt, w_vol, w_avg, w_pct)
+#     seps_A   = (x_idx, x_cnt, x_vol, x_avg, x_pct)
+#     sep_line = "—" * 20
 
-    def fmt_row_A(i_str, cnt, vol, avg, pct, widths, seps):
-        wi, wc, wv, wa, wp = widths
-        xi, xc, xv, xa, xp = seps
-        return "  ".join([
-            inline_code_line(i_str, wi, xi, "right"),
-            inline_code_line(cnt,   wc, xc, "right"),
-            inline_code_line(vol,   wv, xv, "right"),
-            inline_code_line(avg,   wa, xa, "right"),
-            inline_code_line(pct,   wp, xp, "right"),
-        ])
+#     def fmt_row_A(i_str, cnt, vol, avg, pct, widths, seps):
+#         wi, wc, wv, wa, wp = widths
+#         xi, xc, xv, xa, xp = seps
+#         return "  ".join([
+#             inline_code_line(i_str, wi, xi, "right"),
+#             inline_code_line(cnt,   wc, xc, "right"),
+#             inline_code_line(vol,   wv, xv, "right"),
+#             inline_code_line(avg,   wa, xa, "right"),
+#             inline_code_line(pct,   wp, xp, "right"),
+#         ])
 
-    def fmt_header_A(widths, seps):
-        return fmt_row_A("#", "Cnt", "Vol", "Avg", "%", widths, seps)
+#     def fmt_header_A(widths, seps):
+#         return fmt_row_A("#", "Cnt", "Vol", "Avg", "%", widths, seps)
 
-    headerA = fmt_header_A(widths_A, seps_A)
+#     headerA = fmt_header_A(widths_A, seps_A)
 
-    linesA = [headerA, sep_line]
-    for i in range(n):
-        linesA.append(fmt_row_A(
-            escape_md_v2(str(i+1)),
-            escape_md_v2(counts_disp[i]),
-            escape_md_v2(vols_disp[i]),
-            escape_md_v2(avgs_disp[i]),
-            escape_md_v2(ratios_disp[i]),
-            widths_A, seps_A
-        ))
+#     linesA = [headerA, sep_line]
+#     for i in range(n):
+#         linesA.append(fmt_row_A(
+#             escape_md_v2(str(i+1)),
+#             escape_md_v2(counts_disp[i]),
+#             escape_md_v2(vols_disp[i]),
+#             escape_md_v2(avgs_disp[i]),
+#             escape_md_v2(ratios_disp[i]),
+#             widths_A, seps_A
+#         ))
 
-    # ---------- TABLE B (# → Channel mapping) ----------
-    MAX_CHANNEL = 25
-    chan_wrapped = [wrap(ch, width=MAX_CHANNEL, break_long_words=True, break_on_hyphens=True) or [""] for ch in channels_disp]
+#     # ---------- TABLE B (# → Channel mapping) ----------
+#     MAX_CHANNEL = 25
+#     chan_wrapped = [wrap(ch, width=MAX_CHANNEL, break_long_words=True, break_on_hyphens=True) or [""] for ch in channels_disp]
 
-    def fmt_row_B_first(i_str, ch_first, w_idx, x_idx):
-        return "  ".join([
-            pad_with_figspace(i_str, w_idx, x_idx, "right"),
-            escape_md_v2(ch_first),
-        ])
+#     def fmt_row_B_first(i_str, ch_first, w_idx, x_idx):
+#         return "  ".join([
+#             pad_with_figspace(i_str, w_idx, x_idx, "right"),
+#             escape_md_v2(ch_first),
+#         ])
 
-    def fmt_row_B_cont(w_idx):
-        return " " * w_idx + "  "  # indent under the Channel column
+#     def fmt_row_B_cont(w_idx):
+#         return " " * w_idx + "  "  # indent under the Channel column
 
-    headerB = "  ".join([
-        pad_with_figspace("#", w_idx, x_idx, "right"),
-        "Channel"
-    ])
+#     headerB = "  ".join([
+#         pad_with_figspace("#", w_idx, x_idx, "right"),
+#         "Channel"
+#     ])
 
-    linesB = [headerB, sep_line]
-    for i, frags in enumerate(chan_wrapped, start=1):
-        if not frags:
-            frags = [""]
-        linesB.append(fmt_row_B_first(escape_md_v2(str(i)), frags[0], w_idx, x_idx))
-        prefix = fmt_row_B_cont(w_idx)
-        for frag in frags[1:]:
-            linesB.append(prefix + escape_md_v2(frag))
+#     linesB = [headerB, sep_line]
+#     for i, frags in enumerate(chan_wrapped, start=1):
+#         if not frags:
+#             frags = [""]
+#         linesB.append(fmt_row_B_first(escape_md_v2(str(i)), frags[0], w_idx, x_idx))
+#         prefix = fmt_row_B_cont(w_idx)
+#         for frag in frags[1:]:
+#             linesB.append(prefix + escape_md_v2(frag))
 
-    # Final output (normal text, no inline-code lines)
-    return "\n".join([title, "", *linesA, "", *linesB])
+#     # Final output (normal text, no inline-code lines)
+#     return "\n".join([title, "", *linesA, "", *linesB])
 
-def render_channel_distribution_v3(country: str, rows: list[dict], topn: int = 5) -> str:
-    FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩"}
-    CURRENCIES = {"PH":"PHP","TH":"THB","BD":"BDT","PK":"PKR","ID":"IDR"}
-    flag = FLAGS.get(country, "")
-    currency = CURRENCIES.get(country, "")
+# def render_channel_distribution_v3(country: str, rows: list[dict], topn: int = 5) -> str:
+#     FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩"}
+#     CURRENCIES = {"PH":"PHP","TH":"THB","BD":"BDT","PK":"PKR","ID":"IDR"}
+#     flag = FLAGS.get(country, "")
+#     currency = CURRENCIES.get(country, "")
 
-    def escape_md_v2(text: str) -> str:
-        for ch in r"_*[]()~`>#+-=|{}.!":
-            text = text.replace(ch, "\\"+ch)
-        return text
+#     def escape_md_v2(text: str) -> str:
+#         for ch in r"_*[]()~`>#+-=|{}.!":
+#             text = text.replace(ch, "\\"+ch)
+#         return text
 
-    raw_title = f"COUNTRY: {country} {flag} - ({currency})"
-    title = stylize(f"*{escape_md_v2(raw_title)}*", style="sans_bold")
+#     raw_title = f"COUNTRY: {country} {flag} - ({currency})"
+#     title = stylize(f"*{escape_md_v2(raw_title)}*", style="sans_bold")
 
-    # --- Prepare strings ---
-    channels = [str(r.get("method","")).replace("-", ".")
-                .replace(".bd","").replace(".id","").replace(".pk","")
-                .replace("bank.transfer","bank")
-                .replace(".ph.nat","").replace("qr.code","qr").replace("direct","dir")
-                for r in rows]
-    counts  = [str(_fmt_number(r.get("deposit_tnx_count"))) for r in rows]
-    vols    = [str(_fmt_number(r.get("total_deposit_amount_native"))) for r in rows]
-    avgs    = [str(_fmt_number(r.get("average_deposit_amount_native"))) for r in rows]
-    ratios  = [f"{_to_percent_number(r.get('pct_of_country_total_native',0)):.0f}" for r in rows]
+#     # --- Prepare strings ---
+#     channels = [str(r.get("method","")).replace("-", ".")
+#                 .replace(".bd","").replace(".id","").replace(".pk","")
+#                 .replace("bank.transfer","bank")
+#                 .replace(".ph.nat","").replace("qr.code","qr").replace("direct","dir")
+#                 for r in rows]
+#     counts  = [str(_fmt_number(r.get("deposit_tnx_count"))) for r in rows]
+#     vols    = [str(_fmt_number(r.get("total_deposit_amount_native"))) for r in rows]
+#     avgs    = [str(_fmt_number(r.get("average_deposit_amount_native"))) for r in rows]
+#     ratios  = [f"{_to_percent_number(r.get('pct_of_country_total_native',0)):.0f}" for r in rows]
 
-    # --- Wrap channel names if too long ---
-    MAX_CHANNEL = 20
-    chan_wrapped = [wrap(ch, width=MAX_CHANNEL, break_long_words=True, break_on_hyphens=True) or [""] for ch in channels]
+#     # --- Wrap channel names if too long ---
+#     MAX_CHANNEL = 20
+#     chan_wrapped = [wrap(ch, width=MAX_CHANNEL, break_long_words=True, break_on_hyphens=True) or [""] for ch in channels]
 
-    # --- Column widths ---
-    w1 = max(len("Cnt"), *(len(x) for x in counts))
-    w2 = max(len("Vol"), *(len(x) for x in vols))
-    w3 = max(len("Avg"), *(len(x) for x in avgs))
-    w4 = max(len("%"),   *(len(x) for x in ratios))
+#     # --- Column widths ---
+#     w1 = max(len("Cnt"), *(len(x) for x in counts))
+#     w2 = max(len("Vol"), *(len(x) for x in vols))
+#     w3 = max(len("Avg"), *(len(x) for x in avgs))
+#     w4 = max(len("%"),   *(len(x) for x in ratios))
 
-    header = " ".join([
-        "Cnt".rjust(w1),
-        "Vol".rjust(w2),
-        "Avg".rjust(w3),
-        "%".rjust(w4),
-    ])
-    sep = "-" * len(header)
+#     header = " ".join([
+#         "Cnt".rjust(w1),
+#         "Vol".rjust(w2),
+#         "Avg".rjust(w3),
+#         "%".rjust(w4),
+#     ])
+#     sep = "-" * len(header)
 
-    lines = [sep, header, sep]
-    for i in range(len(rows)):
-        # Channel line(s)
-        for frag in chan_wrapped[i]:
-            lines.append(frag)
-        # Numbers line
-        lines.append(" ".join([
-            counts[i].rjust(w1),
-            vols[i].rjust(w2),
-            avgs[i].rjust(w3),
-            ratios[i].rjust(w4),
-        ]))
+#     lines = [sep, header, sep]
+#     for i in range(len(rows)):
+#         # Channel line(s)
+#         for frag in chan_wrapped[i]:
+#             lines.append(frag)
+#         # Numbers line
+#         lines.append(" ".join([
+#             counts[i].rjust(w1),
+#             vols[i].rjust(w2),
+#             avgs[i].rjust(w3),
+#             ratios[i].rjust(w4),
+#         ]))
 
-    # Inline-code each line so Telegram preserves spacing
-    def inline_code_line(s: str) -> str:
-        return f"`{s.replace('`','ˋ')}`"
+#     # Inline-code each line so Telegram preserves spacing
+#     def inline_code_line(s: str) -> str:
+#         return f"`{s.replace('`','ˋ')}`"
 
-    code_lines = [inline_code_line(l) for l in lines]
-    return "\n".join([title, *code_lines])
+#     code_lines = [inline_code_line(l) for l in lines]
+#     return "\n".join([title, *code_lines])
 
-def render_channel_distribution_v0(country: str, rows: list[dict], topn: int = 5) -> str:
+# def render_channel_distribution_v0(country: str, rows: list[dict], topn: int = 5) -> str:
 
-    def pad_with_figspace_(s: str, width: int, num_seps: int, align: str = "left") -> str:
-        inline_count = len("" if s is None else str(s).strip().replace("`","").replace(",","").replace("-",""))
-        sep_count = count_separators(s)
+#     def pad_with_figspace_(s: str, width: int, num_seps: int, align: str = "left") -> str:
+#         inline_count = len("" if s is None else str(s).strip().replace("`","").replace(",","").replace("-",""))
+#         sep_count = count_separators(s)
 
-        # how many figure spaces needed? => Max width trừ cho width of s
+#         # how many figure spaces needed? => Max width trừ cho width of s
 
-        # num of figure spaces = pad - num_seps (if any)
-        num_inlines = max(0, width - num_seps - inline_count)
-        num_seps = max(0, num_seps - sep_count)
-        string_inlines = "" if num_inlines == 0 else f"`{num_inlines*' '}`"
+#         # num of figure spaces = pad - num_seps (if any)
+#         num_inlines = max(0, width - num_seps - inline_count)
+#         num_seps = max(0, num_seps - sep_count)
+#         string_inlines = "" if num_inlines == 0 else f"`{num_inlines*' '}`"
         
-        convert_pads = string_inlines + num_seps*" "
+#         convert_pads = string_inlines + num_seps*" "
         
-        print(f"Len: {len(s)}, Num inlines: {num_inlines}, Num seps: {num_seps}, String: '{s}' -> '{convert_pads + s if align=='right' else s + convert_pads}'")
+#         print(f"Len: {len(s)}, Num inlines: {num_inlines}, Num seps: {num_seps}, String: '{s}' -> '{convert_pads + s if align=='right' else s + convert_pads}'")
 
-        return (convert_pads + s) if align == "right" else (s + convert_pads)
+#         return (convert_pads + s) if align == "right" else (s + convert_pads)
 
-    FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩"}
-    CURRENCIES = {"PH":"PHP","TH":"THB","BD":"BDT","PK":"PKR","ID":"IDR"}
-    flag = FLAGS.get(country, "")
-    currency = CURRENCIES.get(country, "")
+#     FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩"}
+#     CURRENCIES = {"PH":"PHP","TH":"THB","BD":"BDT","PK":"PKR","ID":"IDR"}
+#     flag = FLAGS.get(country, "")
+#     currency = CURRENCIES.get(country, "")
 
-    # --- Title (same style as APF/DPF) ---
-    raw_title = f"COUNTRY: {country} {flag} - ({currency})"
-    title = stylize(f"*{escape_md_v2(raw_title)}*", style="sans_bold")
+#     # --- Title (same style as APF/DPF) ---
+#     raw_title = f"COUNTRY: {country} {flag} - ({currency})"
+#     title = stylize(f"*{escape_md_v2(raw_title)}*", style="sans_bold")
 
-    # --- Prepare strings (compact channel names like before) ---
-    channels = [
-        str(r.get("method","")).replace("-bd","").replace("-id","").replace("-pk","")
-                               .replace("native","nat").replace("bank-transfer","bank")
-                               .replace("-ph","").replace("qr-code","qr").replace("direct","dir")
-        for r in rows
-    ]
-    counts  = [str(_fmt_number(r.get("deposit_tnx_count"))) for r in rows]
-    vols    = [str(_fmt_number(r.get("total_deposit_amount_native"))) for r in rows]
-    avgs    = [str(_fmt_number(r.get("average_deposit_amount_native"))) for r in rows]
-    ratios  = [f"{_to_percent_number(r.get('pct_of_country_total_native',0)):.0f}" for r in rows]
+#     # --- Prepare strings (compact channel names like before) ---
+#     channels = [
+#         str(r.get("method","")).replace("-bd","").replace("-id","").replace("-pk","")
+#                                .replace("native","nat").replace("bank-transfer","bank")
+#                                .replace("-ph","").replace("qr-code","qr").replace("direct","dir")
+#         for r in rows
+#     ]
+#     counts  = [str(_fmt_number(r.get("deposit_tnx_count"))) for r in rows]
+#     vols    = [str(_fmt_number(r.get("total_deposit_amount_native"))) for r in rows]
+#     avgs    = [str(_fmt_number(r.get("average_deposit_amount_native"))) for r in rows]
+#     ratios  = [f"{_to_percent_number(r.get('pct_of_country_total_native',0)):.0f}" for r in rows]
 
-    # ---------- TABLE A (metrics) ----------
-    # Compute widths from what we'll actually print
-    w_idx = max(len("No"), len(str(len(rows))))
-    w_cnt = max(len("Count"), *(len(x) for x in counts or ["0"]))
-    w_vol = max(len("Volume"), *(len(x) for x in vols   or ["0"]))
-    w_avg = max(len("Avg"), *(len(x) for x in avgs   or ["0"]))
-    w_pct = max(len("%"),   *(len(x) for x in ratios or ["0"]))
+#     # ---------- TABLE A (metrics) ----------
+#     # Compute widths from what we'll actually print
+#     w_idx = max(len("No"), len(str(len(rows))))
+#     w_cnt = max(len("Count"), *(len(x) for x in counts or ["0"]))
+#     w_vol = max(len("Volume"), *(len(x) for x in vols   or ["0"]))
+#     w_avg = max(len("Avg"), *(len(x) for x in avgs   or ["0"]))
+#     w_pct = max(len("%"),   *(len(x) for x in ratios or ["0"]))
 
-    # Max thousands-separator counts per column for figspace padding
-    x_idx = max(count_separators("No"), *(count_separators(str(i+1)) for i in range(len(rows)))) if rows else count_separators("No")
-    x_cnt = max(count_separators("Count"), *(count_separators(x) for x in counts or [])) if rows else count_separators("Cnt")
-    x_vol = max(count_separators("Volume"), *(count_separators(x) for x in vols   or [])) if rows else count_separators("Vol")
-    x_avg = max(count_separators("Avg"), *(count_separators(x) for x in avgs   or [])) if rows else count_separators("Avg")
-    x_pct = max(count_separators("%"),   *(count_separators(x) for x in ratios or [])) if rows else count_separators("%")
+#     # Max thousands-separator counts per column for figspace padding
+#     x_idx = max(count_separators("No"), *(count_separators(str(i+1)) for i in range(len(rows)))) if rows else count_separators("No")
+#     x_cnt = max(count_separators("Count"), *(count_separators(x) for x in counts or [])) if rows else count_separators("Cnt")
+#     x_vol = max(count_separators("Volume"), *(count_separators(x) for x in vols   or [])) if rows else count_separators("Vol")
+#     x_avg = max(count_separators("Avg"), *(count_separators(x) for x in avgs   or [])) if rows else count_separators("Avg")
+#     x_pct = max(count_separators("%"),   *(count_separators(x) for x in ratios or [])) if rows else count_separators("%")
 
-    widths_A = (w_idx, w_cnt, w_vol, w_avg, w_pct)
-    seps_A   = (x_idx, x_cnt, x_vol, x_avg, x_pct)
-    print("Table A widths:", widths_A, "seps:", seps_A)
+#     widths_A = (w_idx, w_cnt, w_vol, w_avg, w_pct)
+#     seps_A   = (x_idx, x_cnt, x_vol, x_avg, x_pct)
+#     print("Table A widths:", widths_A, "seps:", seps_A)
 
-    def fmt_row_A(i_str, cnt, vol, avg, pct, widths, seps):
-        wi, wc, wv, wa, wp = widths
-        xi, xc, xv, xa, xp = seps
-        # Use normal spaces between columns; inside cells use figure spaces.
-        return "  ".join([
-            pad_with_figspace_(i_str, wi, xi, "left"),
-            pad_with_figspace_(cnt,   wc, xc, "right"),
-            pad_with_figspace_(vol,   wv, xv, "right"),
-            pad_with_figspace_(avg,   wa, xa, "right"),
-            pad_with_figspace_(pct,   wp, xp, "right"),
-        ])
+#     def fmt_row_A(i_str, cnt, vol, avg, pct, widths, seps):
+#         wi, wc, wv, wa, wp = widths
+#         xi, xc, xv, xa, xp = seps
+#         # Use normal spaces between columns; inside cells use figure spaces.
+#         return "  ".join([
+#             pad_with_figspace_(i_str, wi, xi, "left"),
+#             pad_with_figspace_(cnt,   wc, xc, "right"),
+#             pad_with_figspace_(vol,   wv, xv, "right"),
+#             pad_with_figspace_(avg,   wa, xa, "right"),
+#             pad_with_figspace_(pct,   wp, xp, "right"),
+#         ])
 
-    def fmt_header_A(widths, seps):
-        wi, wc, wv, wa, wp = widths
-        xi, xc, xv, xa, xp = seps
-        # Backticks around header labels (like APF), but NOT inline-code wrapping.
-        return "  ".join([
-            pad_with_figspace_("`No`",   wi, xi, "left"),
-            pad_with_figspace_("`Count`", wc, xc, "right"),
-            pad_with_figspace_("`Volume`", wv, xv, "right"),
-            pad_with_figspace_("`Avg`", wa, xa, "right"),
-            pad_with_figspace_("`%`",   wp, xp, "right"),
-        ])
+#     def fmt_header_A(widths, seps):
+#         wi, wc, wv, wa, wp = widths
+#         xi, xc, xv, xa, xp = seps
+#         # Backticks around header labels (like APF), but NOT inline-code wrapping.
+#         return "  ".join([
+#             pad_with_figspace_("`No`",   wi, xi, "left"),
+#             pad_with_figspace_("`Count`", wc, xc, "right"),
+#             pad_with_figspace_("`Volume`", wv, xv, "right"),
+#             pad_with_figspace_("`Avg`", wa, xa, "right"),
+#             pad_with_figspace_("`%`",   wp, xp, "right"),
+#         ])
     
-    headerA  = fmt_header_A(widths_A, seps_A)
-    sep_line = "—" * 20  # match APF/DPF vibe
+#     headerA  = fmt_header_A(widths_A, seps_A)
+#     sep_line = "—" * 20  # match APF/DPF vibe
 
-    linesA = [headerA, sep_line]
-    for i in range(len(rows)):
-        linesA.append(fmt_row_A(
-            escape_md_v2(str(i+1)),
-            escape_md_v2(counts[i]),
-            escape_md_v2(vols[i]),
-            escape_md_v2(avgs[i]),
-            escape_md_v2(ratios[i]),
-            widths_A, seps_A
-        ))
+#     linesA = [headerA, sep_line]
+#     for i in range(len(rows)):
+#         linesA.append(fmt_row_A(
+#             escape_md_v2(str(i+1)),
+#             escape_md_v2(counts[i]),
+#             escape_md_v2(vols[i]),
+#             escape_md_v2(avgs[i]),
+#             escape_md_v2(ratios[i]),
+#             widths_A, seps_A
+#         ))
 
-    # ---------- TABLE B (index → channel mapping) ----------
-    MAX_CHANNEL = 25
-    # wrap channel into fragments for multi-line display
-    chan_wrapped = [wrap(ch, width=MAX_CHANNEL, break_long_words=True, break_on_hyphens=True) or [""] for ch in channels]
+#     # ---------- TABLE B (index → channel mapping) ----------
+#     MAX_CHANNEL = 25
+#     # wrap channel into fragments for multi-line display
+#     chan_wrapped = [wrap(ch, width=MAX_CHANNEL, break_long_words=True, break_on_hyphens=True) or [""] for ch in channels]
 
-    # For Table B we only need the index width & sep count
-    widths_B = (w_idx,)
-    seps_B   = (x_idx,)
-    print("Table B widths:", widths_B, "seps:", seps_B)
+#     # For Table B we only need the index width & sep count
+#     widths_B = (w_idx,)
+#     seps_B   = (x_idx,)
+#     print("Table B widths:", widths_B, "seps:", seps_B)
 
-    def fmt_row_B_first(i_str, ch_first, widths, seps):
-        (wi,), (xi,) = widths, seps
-        return "    ".join([
-            pad_with_figspace(i_str, wi, xi, "left"),
-            escape_md_v2(ch_first),
-        ])
+#     def fmt_row_B_first(i_str, ch_first, widths, seps):
+#         (wi,), (xi,) = widths, seps
+#         return "    ".join([
+#             pad_with_figspace(i_str, wi, xi, "left"),
+#             escape_md_v2(ch_first),
+#         ])
 
-    def fmt_row_B_cont(widths):
-        (wi,) = widths
-        return " " * (wi) + "  "  # indent continuation lines under the Channel column
+#     def fmt_row_B_cont(widths):
+#         (wi,) = widths
+#         return " " * (wi) + "  "  # indent continuation lines under the Channel column
 
-    headerB = "    ".join([
-        pad_with_figspace("`No`", w_idx, x_idx, "left"),
-        "`Channel`"
-    ])
+#     headerB = "    ".join([
+#         pad_with_figspace("`No`", w_idx, x_idx, "left"),
+#         "`Channel`"
+#     ])
 
-    linesB = [headerB, sep_line]
-    for i, frags in enumerate(chan_wrapped, start=1):
-        if not frags:
-            frags = [""]
-        # first line with index + first fragment
-        linesB.append(fmt_row_B_first(escape_md_v2(str(i)), frags[0], widths_B, seps_B))
-        # continuation lines aligned under Channel
-        cont_prefix = fmt_row_B_cont(widths_B)
-        for frag in frags[1:]:
-            linesB.append(cont_prefix + escape_md_v2(frag))
+#     linesB = [headerB, sep_line]
+#     for i, frags in enumerate(chan_wrapped, start=1):
+#         if not frags:
+#             frags = [""]
+#         # first line with index + first fragment
+#         linesB.append(fmt_row_B_first(escape_md_v2(str(i)), frags[0], widths_B, seps_B))
+#         # continuation lines aligned under Channel
+#         cont_prefix = fmt_row_B_cont(widths_B)
+#         for frag in frags[1:]:
+#             linesB.append(cont_prefix + escape_md_v2(frag))
 
-    # Final output (normal text, no inline-code lines)
-    return "\n".join([title, "", *linesA, "", *linesB])
+#     # Final output (normal text, no inline-code lines)
+#     return "\n".join([title, "", *linesA, "", *linesB])
 
 async def send_channel_distribution(update: Update, country_groups: dict[str, list[dict]], max_width: int = 35):
     for country, rows in sorted(country_groups.items()):
@@ -1659,218 +1659,218 @@ def escape_md_v2(text: str) -> str:
     # escape the full Telegram set
     return re.sub(r"([_*[\]()~`>#+\-=\|{}\.!])", r"\\\1", text)
 
-def render_dpf_table_old(country, rows, max_width=72, brand=False):
-    def fmt_row_normal(d, a, t, w, widths, list_seps):
-        w0, w1, w2, w3 = widths
-        x0, x1, x2, x3 = list_seps
-        # Use normal spaces between columns; inside cells use figure spaces for padding.
-        return "  ".join([
-            pad_with_figspace(d, w0, x0, "left"),
-            pad_with_figspace(a, w1, x1, "right"),
-            pad_with_figspace(t, w2, x2, "right"),
-            pad_with_figspace(w, w3, x3, "right"),
-        ])
+# def render_dpf_table_old(country, rows, max_width=72, brand=False):
+#     def fmt_row_normal(d, a, t, w, widths, list_seps):
+#         w0, w1, w2, w3 = widths
+#         x0, x1, x2, x3 = list_seps
+#         # Use normal spaces between columns; inside cells use figure spaces for padding.
+#         return "  ".join([
+#             pad_with_figspace(d, w0, x0, "left"),
+#             pad_with_figspace(a, w1, x1, "right"),
+#             pad_with_figspace(t, w2, x2, "right"),
+#             pad_with_figspace(w, w3, x3, "right"),
+#         ])
 
-    def fmt_row_header(d, a, t, w, widths, list_seps):
-        w0, w1, w2, w3 = widths
-        x0, x1, x2, x3 = list_seps
-        # Use normal spaces between columns; inside cells use figure spaces for padding.
-        return "  ".join([
-            pad_with_figspace(f"`{d}`", w0, x0, "left"),
-            pad_with_figspace(f"`{a}`", w1, x1, "right"),
-            pad_with_figspace(f"`{t}`", w2, x2, "right"),
-            pad_with_figspace(f"`{w}`", w3, x3, "right"),
-        ])
+#     def fmt_row_header(d, a, t, w, widths, list_seps):
+#         w0, w1, w2, w3 = widths
+#         x0, x1, x2, x3 = list_seps
+#         # Use normal spaces between columns; inside cells use figure spaces for padding.
+#         return "  ".join([
+#             pad_with_figspace(f"`{d}`", w0, x0, "left"),
+#             pad_with_figspace(f"`{a}`", w1, x1, "right"),
+#             pad_with_figspace(f"`{t}`", w2, x2, "right"),
+#             pad_with_figspace(f"`{w}`", w3, x3, "right"),
+#         ])
 
-    FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩"}
-    CURRENCIES = {"TH":"THB","PH":"PHP","BD":"BDT","PK":"PKR","ID":"IDR"}
-    flag     = FLAGS.get(country, "")
-    currency = CURRENCIES.get(country, "")
+#     FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩"}
+#     CURRENCIES = {"TH":"THB","PH":"PHP","BD":"BDT","PK":"PKR","ID":"IDR"}
+#     flag     = FLAGS.get(country, "")
+#     currency = CURRENCIES.get(country, "")
 
-    # group by brand
-    brand_groups = defaultdict(list)
-    for r in rows:
-        brand_groups[r.get("brand", "Unknown")].append(r)
+#     # group by brand
+#     brand_groups = defaultdict(list)
+#     for r in rows:
+#         brand_groups[r.get("brand", "Unknown")].append(r)
 
-    # ensure Weightage
-    prepped = []
-    for b, items in brand_groups.items():
-        by_date = {}
-        for r in items:
-            d = str(r.get("date", ""))
-            by_date.setdefault(d, {"date": d, "brand": b, "AverageDeposit": [], "TotalDeposit": 0.0})
-            by_date[d]["TotalDeposit"] += _num_to_float(r.get("TotalDeposit", 0))
-            if r.get("AverageDeposit") is not None:
-                by_date[d]["AverageDeposit"].append(_num_to_float(r["AverageDeposit"]))
-        collapsed = []
-        for d, obj in by_date.items():
-            avg_val = sum(obj["AverageDeposit"])/len(obj["AverageDeposit"]) if obj["AverageDeposit"] else None
-            collapsed.append({"date": d, "brand": b, "AverageDeposit": avg_val, "TotalDeposit": obj["TotalDeposit"]})
-        collapsed.sort(key=lambda x: x["date"], reverse=True)
-        latest_total = collapsed[0]["TotalDeposit"] if collapsed else 0.0
-        for rr in collapsed:
-            rr["Weightage"] = (rr["TotalDeposit"]/latest_total) if latest_total else None
-        prepped.extend(collapsed)
+#     # ensure Weightage
+#     prepped = []
+#     for b, items in brand_groups.items():
+#         by_date = {}
+#         for r in items:
+#             d = str(r.get("date", ""))
+#             by_date.setdefault(d, {"date": d, "brand": b, "AverageDeposit": [], "TotalDeposit": 0.0})
+#             by_date[d]["TotalDeposit"] += _num_to_float(r.get("TotalDeposit", 0))
+#             if r.get("AverageDeposit") is not None:
+#                 by_date[d]["AverageDeposit"].append(_num_to_float(r["AverageDeposit"]))
+#         collapsed = []
+#         for d, obj in by_date.items():
+#             avg_val = sum(obj["AverageDeposit"])/len(obj["AverageDeposit"]) if obj["AverageDeposit"] else None
+#             collapsed.append({"date": d, "brand": b, "AverageDeposit": avg_val, "TotalDeposit": obj["TotalDeposit"]})
+#         collapsed.sort(key=lambda x: x["date"], reverse=True)
+#         latest_total = collapsed[0]["TotalDeposit"] if collapsed else 0.0
+#         for rr in collapsed:
+#             rr["Weightage"] = (rr["TotalDeposit"]/latest_total) if latest_total else None
+#         prepped.extend(collapsed)
 
-    # prepare strings
-    def _row_strs(r):
-        return (
-            _shrink_date(r["date"]),
-            _fmt_commas0(r["AverageDeposit"]) if r["AverageDeposit"] is not None else "-",
-            _fmt_commas0(r["TotalDeposit"]),
-            _fmt_pct_int(r["Weightage"])
-        )
+#     # prepare strings
+#     def _row_strs(r):
+#         return (
+#             _shrink_date(r["date"]),
+#             _fmt_commas0(r["AverageDeposit"]) if r["AverageDeposit"] is not None else "-",
+#             _fmt_commas0(r["TotalDeposit"]),
+#             _fmt_pct_int(r["Weightage"])
+#         )
 
-    dates_all, avgs_all, totals_all, w_all = [], [], [], []
-    for r in prepped:
-        d, a, t, w = _row_strs(r)
-        dates_all.append(d); avgs_all.append(a); totals_all.append(t); w_all.append(w)
+#     dates_all, avgs_all, totals_all, w_all = [], [], [], []
+#     for r in prepped:
+#         d, a, t, w = _row_strs(r)
+#         dates_all.append(d); avgs_all.append(a); totals_all.append(t); w_all.append(w)
 
-    w0 = max(len("Date"),  *(len(s) for s in dates_all)) if dates_all else len("Date")
-    w1 = max(len("Avg"),   *(len(s) for s in avgs_all))  if avgs_all else len("Avg")
-    w2 = max(len("Total"), *(len(s) for s in totals_all))if totals_all else len("Total")
-    w3 = max(len("%"),     *(len(s) for s in w_all))     if w_all     else len("%")
+#     w0 = max(len("Date"),  *(len(s) for s in dates_all)) if dates_all else len("Date")
+#     w1 = max(len("Avg"),   *(len(s) for s in avgs_all))  if avgs_all else len("Avg")
+#     w2 = max(len("Total"), *(len(s) for s in totals_all))if totals_all else len("Total")
+#     w3 = max(len("%"),     *(len(s) for s in w_all))     if w_all     else len("%")
 
-    x0 = max(count_separators("Date"), *(count_separators(x) for x in dates_all))
-    x1 = max(count_separators("Avg"), *(count_separators(x) for x in avgs_all))
-    x2 = max(count_separators("Total"), *(count_separators(x) for x in totals_all))
-    x3 = max(count_separators("%"), *(count_separators(x) for x in w_all))
+#     x0 = max(count_separators("Date"), *(count_separators(x) for x in dates_all))
+#     x1 = max(count_separators("Avg"), *(count_separators(x) for x in avgs_all))
+#     x2 = max(count_separators("Total"), *(count_separators(x) for x in totals_all))
+#     x3 = max(count_separators("%"), *(count_separators(x) for x in w_all))
 
-    widths = (w0, w1, w2, w3)
-    num_seps = (x0, x1, x2, x3)
-    print("max widths:", widths, "max num_seps:", num_seps)
+#     widths = (w0, w1, w2, w3)
+#     num_seps = (x0, x1, x2, x3)
+#     print("max widths:", widths, "max num_seps:", num_seps)
 
-    current_time, _ = get_date_range_header() 
-    title = stylize(f"*{escape_md_v2(f'COUNTRY: {country} {flag} ({currency})')}*", style="sans_bold")
-    subtitle = "\n" + escape_md_v2(f"Deposit Performance (up to {str(current_time)} GMT+7)")
-    print("Subtitle:", subtitle)
-    print("Title:", title)
+#     current_time, _ = get_date_range_header() 
+#     title = stylize(f"*{escape_md_v2(f'COUNTRY: {country} {flag} ({currency})')}*", style="sans_bold")
+#     subtitle = "\n" + escape_md_v2(f"Deposit Performance (up to {str(current_time)} GMT+7)")
+#     print("Subtitle:", subtitle)
+#     print("Title:", title)
 
-    sep_line = "—" * 20
-    if brand == False:
-        # --- build output like APF --
-        header = fmt_row_header("Date", "Avg", "Total", "%", widths, num_seps)
-        parts = [title + subtitle, "", header, sep_line]
-    else:
-        parts = []
+#     sep_line = "—" * 20
+#     if brand == False:
+#         # --- build output like APF --
+#         header = fmt_row_header("Date", "Avg", "Total", "%", widths, num_seps)
+#         parts = [title + subtitle, "", header, sep_line]
+#     else:
+#         parts = []
 
-    # sort brands by TotalDeposit DESC
-    brands_sorted = sorted(
-        brand_groups.items(),
-        key=lambda kv: _sum_field(kv[1], "TotalDeposit"),
-        reverse=True
-    )
+#     # sort brands by TotalDeposit DESC
+#     brands_sorted = sorted(
+#         brand_groups.items(),
+#         key=lambda kv: _sum_field(kv[1], "TotalDeposit"),
+#         reverse=True
+#     )
         
-    first = True
-    for brand_name, _ in brands_sorted:
-        if not first:
-            parts.append("")  # blank line between brands
+#     first = True
+#     for brand_name, _ in brands_sorted:
+#         if not first:
+#             parts.append("")  # blank line between brands
 
-        first = False
-        if brand == False:
-            parts.append(f"*{stylize(str(brand_name), style= "sans_bold")}*")  # plain brand label
-        else:
-            parts.append(f"{stylize(str(brand_name), style= "serif_bold")}")
-        for r in filter(lambda x: x["brand"] == brand_name, prepped):
-            d, a, t, w = _row_strs(r)
-            parts.append(fmt_row_normal(escape_md_v2(d), escape_md_v2(a), escape_md_v2(t), escape_md_v2(w), widths, num_seps))
-    print(parts)
-    return "\n".join(parts)
+#         first = False
+#         if brand == False:
+#             parts.append(f"*{stylize(str(brand_name), style= "sans_bold")}*")  # plain brand label
+#         else:
+#             parts.append(f"{stylize(str(brand_name), style= "serif_bold")}")
+#         for r in filter(lambda x: x["brand"] == brand_name, prepped):
+#             d, a, t, w = _row_strs(r)
+#             parts.append(fmt_row_normal(escape_md_v2(d), escape_md_v2(a), escape_md_v2(t), escape_md_v2(w), widths, num_seps))
+#     print(parts)
+#     return "\n".join(parts)
 
-def render_dpf_table_v3(country, rows, max_width=72, brand=False):
-    FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩"}
-    flag = FLAGS.get(country, "")
+# def render_dpf_table_v3(country, rows, max_width=72, brand=False):
+#     FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩"}
+#     flag = FLAGS.get(country, "")
 
-    # --- group by brand ---
-    brand_groups = defaultdict(list)
-    for r in rows:
-        brand_groups[r.get("brand", "Unknown")].append(r)
+#     # --- group by brand ---
+#     brand_groups = defaultdict(list)
+#     for r in rows:
+#         brand_groups[r.get("brand", "Unknown")].append(r)
 
-    # widths computed from what you'll actually print
-    dates_all = [str(r.get("date","")) for r in rows]
-    nars_all  = [str(_fmt_number(r.get("NAR", 0))) for r in rows]
-    ftds_all  = [str(_fmt_number(r.get("FTD", 0))) for r in rows]
-    stds_all  = [str(_fmt_number(r.get("STD", 0))) for r in rows]
-    ttds_all  = [str(_fmt_number(r.get("TTD", 0))) for r in rows]
+#     # widths computed from what you'll actually print
+#     dates_all = [str(r.get("date","")) for r in rows]
+#     nars_all  = [str(_fmt_number(r.get("NAR", 0))) for r in rows]
+#     ftds_all  = [str(_fmt_number(r.get("FTD", 0))) for r in rows]
+#     stds_all  = [str(_fmt_number(r.get("STD", 0))) for r in rows]
+#     ttds_all  = [str(_fmt_number(r.get("TTD", 0))) for r in rows]
 
-    w0 = max(len("Date"), *(len(x) for x in dates_all)) if dates_all else len("Date")
-    x0 = max(count_separators("Date"), *(count_separators(x) for x in dates_all)) if dates_all else count_separators("Date")
+#     w0 = max(len("Date"), *(len(x) for x in dates_all)) if dates_all else len("Date")
+#     x0 = max(count_separators("Date"), *(count_separators(x) for x in dates_all)) if dates_all else count_separators("Date")
 
-    w1 = max(len("NAR"), *(len(x) for x in nars_all)) if nars_all else len("NAR")
-    x1 = max(count_separators("NAR"), *(count_separators(x) for x in nars_all)) if nars_all else count_separators("NAR")
+#     w1 = max(len("NAR"), *(len(x) for x in nars_all)) if nars_all else len("NAR")
+#     x1 = max(count_separators("NAR"), *(count_separators(x) for x in nars_all)) if nars_all else count_separators("NAR")
 
-    w2 = max(len("FTD"), *(len(x) for x in ftds_all)) if ftds_all else len("FTD")
-    x2 = max(count_separators("FTD"), *(count_separators(x) for x in ftds_all)) if ftds_all else count_separators("FTD")
+#     w2 = max(len("FTD"), *(len(x) for x in ftds_all)) if ftds_all else len("FTD")
+#     x2 = max(count_separators("FTD"), *(count_separators(x) for x in ftds_all)) if ftds_all else count_separators("FTD")
 
-    w3 = max(len("STD"), *(len(x) for x in stds_all)) if stds_all else len("STD")
-    x3 = max(count_separators("STD"), *(count_separators(x) for x in stds_all)) if stds_all else count_separators("STD")
+#     w3 = max(len("STD"), *(len(x) for x in stds_all)) if stds_all else len("STD")
+#     x3 = max(count_separators("STD"), *(count_separators(x) for x in stds_all)) if stds_all else count_separators("STD")
 
-    w4 = max(len("TTD"), *(len(x) for x in ttds_all)) if ttds_all else len("TTD")
-    x4 = max(count_separators("TTD"), *(count_separators(x) for x in ttds_all)) if ttds_all else count_separators("TTD")
+#     w4 = max(len("TTD"), *(len(x) for x in ttds_all)) if ttds_all else len("TTD")
+#     x4 = max(count_separators("TTD"), *(count_separators(x) for x in ttds_all)) if ttds_all else count_separators("TTD")
 
-    list_seperators = [x0 + x1, x2, x3, x4, 0]
-    print(list_seperators)
+#     list_seperators = [x0 + x1, x2, x3, x4, 0]
+#     print(list_seperators)
 
-    def fmt_row(d, n, f, s, t):
-        d = str(d)
-        n = str(n)
-        f = str(f)
-        s = str(s)
-        t = str(t)
-        print(d, n, f, s, t)
-        return " ".join([
-            d.ljust(w0),
-            n.rjust(w1),
-            f.rjust(w2),
-            s.rjust(w3),
-            t.rjust(w4),
-        ])
+#     def fmt_row(d, n, f, s, t):
+#         d = str(d)
+#         n = str(n)
+#         f = str(f)
+#         s = str(s)
+#         t = str(t)
+#         print(d, n, f, s, t)
+#         return " ".join([
+#             d.ljust(w0),
+#             n.rjust(w1),
+#             f.rjust(w2),
+#             s.rjust(w3),
+#             t.rjust(w4),
+#         ])
 
-    header = fmt_row("Date", "NAR", "FTD", "STD", "TTD")
-    sep = "-".join(["-" * w0, "-" * w1, "-" * w2, "-" * w3, "-" * w4])
+#     header = fmt_row("Date", "NAR", "FTD", "STD", "TTD")
+#     sep = "-".join(["-" * w0, "-" * w1, "-" * w2, "-" * w3, "-" * w4])
 
-    # --- build output ---
-    current_time, date_range = get_date_range_header()
+#     # --- build output ---
+#     current_time, date_range = get_date_range_header()
 
-    if not brand:
-        title = stylize(f"*{escape_md_v2(f'COUNTRY: {country} {flag}')}*", style="sans_bold")
-        subtitle = "\n" + escape_md_v2(f"Acquisition Summary (up to {current_time} GMT+7)")
-        title_line = title + subtitle
-        parts = [title_line]
+#     if not brand:
+#         title = stylize(f"*{escape_md_v2(f'COUNTRY: {country} {flag}')}*", style="sans_bold")
+#         subtitle = "\n" + escape_md_v2(f"Acquisition Summary (up to {current_time} GMT+7)")
+#         title_line = title + subtitle
+#         parts = [title_line]
 
-        # Show separator + header ONCE (above first brand)
-        parts.append(inline_code_line(sep))
-        parts.append(backtick_with_trailing_spaces(inline_code_line(header), list_seperators))
-        parts.append(inline_code_line(sep))
-    else:
-        parts = []
+#         # Show separator + header ONCE (above first brand)
+#         parts.append(inline_code_line(sep))
+#         parts.append(backtick_with_trailing_spaces(inline_code_line(header), list_seperators))
+#         parts.append(inline_code_line(sep))
+#     else:
+#         parts = []
 
-    # Then each brand with only its rows
-    first = True
-    for brand_name, items in sorted(brand_groups.items()):
-        if not first:
-            parts.append("")  # blank line between brands
-        first = False
+#     # Then each brand with only its rows
+#     first = True
+#     for brand_name, items in sorted(brand_groups.items()):
+#         if not first:
+#             parts.append("")  # blank line between brands
+#         first = False
 
-        parts.append(stylize(f"*{escape_md_v2(str(brand_name))}*", style="sans_bold"))
+#         parts.append(stylize(f"*{escape_md_v2(str(brand_name))}*", style="sans_bold"))
 
-        for r in items:
-            parts.append(
-                wrap_separators(
-                    inline_code_line(
-                        fmt_row(
-                            r.get("date", ""),
-                            _fmt_number(r.get("NAR", 0)),
-                            _fmt_number(r.get("FTD", 0)),
-                            _fmt_number(r.get("STD", 0)),
-                            _fmt_number(r.get("TTD", 0)),
-                        )
-                    )
-                )
-            )
+#         for r in items:
+#             parts.append(
+#                 wrap_separators(
+#                     inline_code_line(
+#                         fmt_row(
+#                             r.get("date", ""),
+#                             _fmt_number(r.get("NAR", 0)),
+#                             _fmt_number(r.get("FTD", 0)),
+#                             _fmt_number(r.get("STD", 0)),
+#                             _fmt_number(r.get("TTD", 0)),
+#                         )
+#                     )
+#                 )
+#             )
 
-    print(parts)
-    return "\n".join(parts)
+#     print(parts)
+#     return "\n".join(parts)
 
 def render_dpf_table_v2(country, rows, max_width=72, brand=False):
     # --- helpers used here are assumed to exist in your env:
