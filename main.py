@@ -643,8 +643,6 @@ class RealTimeBot:
     # async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
-        if not user or user.id not in self.registered_users:
-            return await update.message.reply_text("⚠️ Please register first by contacting the admin.")
 
         # Command catalog (titles + usage)
         catalog = {
