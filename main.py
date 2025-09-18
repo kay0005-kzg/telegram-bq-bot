@@ -45,6 +45,36 @@ def get_date_range_header():
     ]
     return current_time, dates
 
+# ---- unicode "font" converter ----
+STYLES = {
+    "mono":          {"A":0x1D670, "a":0x1D68A, "0":0x1D7F6},  # Mathematical Monospace
+    "sans":          {"A":0x1D5A0, "a":0x1D5BA, "0":0x1D7E2},  # Sans-serif
+    "sans_bold":     {"A":0x1D5D4, "a":0x1D5EE, "0":0x1D7EC},  # Sans-serif Bold
+    "serif_bold":    {"A":0x1D400, "a":0x1D41A, "0":0x1D7CE},  # Bold
+    "serif_italic":  {"A":0x1D434, "a":0x1D44E, "0":None},     # Italic (no special digits)
+    "serif_bi":      {"A":0x1D468, "a":0x1D482, "0":None},     # Bold Italic
+    "fullwidth":     {"A":0xFF21,  "a":0xFF41,  "0":0xFF10, "space":0x3000},  # Ｆｕｌｌｗｉｄｔｈ
+}
+
+def stylize(text: str, style: str = "mono") -> str:
+    spec = STYLES.get(style)
+    if not spec:
+        raise ValueError(f"Unknown style '{style}'. Try: {', '.join(STYLES)}")
+
+    out = []
+    for ch in text:
+        o = ch
+        if "A" <= ch <= "Z" and spec.get("A") is not None:
+            o = chr(spec["A"] + (ord(ch) - ord("A")))
+        elif "a" <= ch <= "z" and spec.get("a") is not None:
+            o = chr(spec["a"] + (ord(ch) - ord("a")))
+        elif "0" <= ch <= "9" and spec.get("0") is not None:
+            o = chr(spec["0"] + (ord(ch) - ord("0")))
+        elif ch == " " and style == "fullwidth" and "space" in spec:
+            o = chr(spec["space"])  # optional fullwidth space
+        out.append(o)
+    return "".join(out)
+
 class RealTimeBot:
     def __init__(self):
         self.config = Config()
@@ -650,21 +680,21 @@ class RealTimeBot:
                 "title": "Deposit Channel Distribution (Specific date)",
                 "lines": [
                     "`/dist a <YYYYMMDD>`: all countries",
-                    "`/dist <COUNTRY> <YYYYMMDD>`: e.g., /dist TH 20250901",
+                    "`/dist <COUNTRY> <YYYYMMDD>`: e.g., `/dist TH 20250901`",
                 ],
             },
             "apf": {
                 "title": "Acquisition Performance (Rolling 3 days)",
                 "lines": [
                     "`/apf a`: all countries",
-                    "`/apf <COUNTRY>`: e.g., /apf TH",
+                    "`/apf <COUNTRY>`: e.g., `/apf TH`",
                 ],
             },
             "dpf": {
                 "title": "Deposit Performance (Rolling 3 days)",
                 "lines": [
                     "`/dpf a`: all countries",
-                    "`/dpf <COUNTRY>`: e.g., /dpf PH",
+                    "`/dpf <COUNTRY>`: e.g., `/dpf PH`",
                 ],
             },
         }
@@ -678,7 +708,7 @@ class RealTimeBot:
             )
 
         # Build help text
-        parts = ["🤖 *Realtime Report Bot*\n"]
+        parts = [stylize("🤖 *REALTIME REPORT BOT*\n", style = "sans_bold")]
         for cmd in visible_cmds:
             section = catalog[cmd]
             parts.append(f"*{section['title']}*")
@@ -688,9 +718,7 @@ class RealTimeBot:
 
         # Common footer
         parts.append("*📍 Supported Countries:* TH, PH, BD, PK, ID")
-        parts.append("*ℹ️ Data Scope:*")
-        parts.append("• *Timezone:* GMT+7")
-        parts.append("• *Data Update:* Near real-time")
+        parts.append("*🕒 Timezone:* GMT+7")
 
         text = "\n".join(parts)
         await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
