@@ -1,5 +1,5 @@
 -- Declare country param (NULL means "all")
--- DECLARE target_country STRING DEFAULT NULL;  
+-- DECLARE target_country STRING DEFAULT NULL;
 -- e.g. SET target_country = 'TH';  -- or leave NULL for all
 
 -- 3-day sliding window: today, -1d, -2d, each capped at "now" in Asia/Bangkok
@@ -20,7 +20,7 @@ windows AS (
 map_country AS (
   SELECT DISTINCT
     UPPER(a.name) AS brand,
-    CASE 
+    CASE
       WHEN f.reqCurrency = 'THB' THEN 'TH'
       WHEN f.reqCurrency = 'PHP' THEN 'PH'
       WHEN f.reqCurrency = 'BDT' THEN 'BD'
@@ -30,8 +30,19 @@ map_country AS (
     END AS country
   FROM `kz-dp-prod.kz_pg_to_bq_realtime.ext_funding_tx` f
   LEFT JOIN `kz-dp-prod.kz_pg_to_bq_realtime.account` a ON f.accountId = a.id
+  -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+  -- OPTIMIZATION 1: Filter countries early here. --
+  WHERE @target_country IS NULL OR
+    CASE
+      WHEN f.reqCurrency = 'THB' THEN 'TH'
+      WHEN f.reqCurrency = 'PHP' THEN 'PH'
+      WHEN f.reqCurrency = 'BDT' THEN 'BD'
+      WHEN f.reqCurrency = 'PKR' THEN 'PK'
+      WHEN f.reqCurrency = 'IDR' THEN 'ID'
+      ELSE NULL
+    END = @target_country
+  -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 ),
-
 -- Registrations (NAR) within each day's partial window up to "now"
 view_total AS (
   SELECT
@@ -41,10 +52,6 @@ view_total AS (
     UPPER(a.`group`) AS `group`,
     UPPER(a.name) AS name,
     mc.country,
-    m.deposit1At,
-    m.deposit2At,
-    m.deposit3At,
-    DATE(m.registerAt, 'Asia/Bangkok') AS register_asia_date,
     m.id AS member,
     a.id AS account
   FROM `kz-dp-prod.kz_pg_to_bq_realtime.ext_member` AS m
@@ -56,19 +63,16 @@ view_total AS (
   WHERE m.registerAt >= w.start_ts
     AND m.registerAt <  w.end_ts
 ),
-
 -- All deposits (for global ranking per user), then filter by each window later
 total_deposit AS (
-  SELECT DISTINCT
+  SELECT
     CONCAT(a.gamePrefix, m.apiIdentifier) AS username,
     f.memberId,
     f.completedAt,
     UPPER(a.name)   AS brand,
     UPPER(a.`group`) AS `group`,
-    f.reqCurrency,
     f.id,
-    f.method,
-    CASE 
+    CASE
       WHEN f.reqCurrency = 'THB' THEN 'TH'
       WHEN f.reqCurrency = 'PHP' THEN 'PH'
       WHEN f.reqCurrency = 'BDT' THEN 'BD'
@@ -82,8 +86,22 @@ total_deposit AS (
   LEFT JOIN `kz-dp-prod.kz_pg_to_bq_realtime.account` a ON f.accountId = a.id
   WHERE f.type = 'deposit'
     AND f.status = 'completed'
+    -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+    -- OPTIMIZATION 2: Filter the main deposit table early to speed up the RANK() function. --
+    AND (
+      @target_country IS NULL OR
+      CASE
+        WHEN f.reqCurrency = 'THB' THEN 'TH'
+        WHEN f.reqCurrency = 'PHP' THEN 'PH'
+        WHEN f.reqCurrency = 'BDT' THEN 'BD'
+        WHEN f.reqCurrency = 'PKR' THEN 'PK'
+        WHEN f.reqCurrency = 'IDR' THEN 'ID'
+        ELSE NULL
+      END = @target_country
+    )
+    -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY f.id ORDER BY f.updatedAt DESC) = 1
 ),
-
 -- Rank deposits per user across all time (so FTD/STD/TTD are true 1st/2nd/3rd overall)
 ranked_deposit AS (
   SELECT
@@ -91,7 +109,6 @@ ranked_deposit AS (
     RANK() OVER (PARTITION BY username ORDER BY createdAt ASC) AS rank_deposit
   FROM total_deposit td
 ),
-
 -- For each day-window, keep deposits with completedAt inside that day's partial window
 windowed_deposit AS (
   SELECT
@@ -105,20 +122,18 @@ windowed_deposit AS (
     ON rd.completedAt >= w.start_ts
    AND rd.completedAt <  w.end_ts
 ),
-
 consolidated_deposit AS (
   SELECT
     date,
     brand,
     `group`,
     country,
-    SUM(CASE WHEN rank_deposit = 1 THEN 1 ELSE 0 END) AS FTD,
-    SUM(CASE WHEN rank_deposit = 2 THEN 1 ELSE 0 END) AS STD,
-    SUM(CASE WHEN rank_deposit = 3 THEN 1 ELSE 0 END) AS TTD
+    COUNTIF(rank_deposit = 1) AS FTD,
+    COUNTIF(rank_deposit = 2) AS STD,
+    COUNTIF(rank_deposit = 3) AS TTD
   FROM windowed_deposit
   GROUP BY date, brand, `group`, country
 ),
-
 consolidated_nar AS (
   SELECT
     vt.date,
@@ -129,15 +144,13 @@ consolidated_nar AS (
   FROM view_total vt
   GROUP BY vt.date, vt.`group`, vt.name, vt.country
 ),
-
 brand_total AS (
-  SELECT 
+  SELECT
     brand,
     SUM(NAR) AS total_nar
   FROM consolidated_nar
   GROUP BY brand
 )
-
 SELECT
   cn.date,
   cn.`group`,
@@ -155,5 +168,8 @@ LEFT JOIN consolidated_deposit cd
  AND cn.country = cd.country
 JOIN brand_total bt
   ON cn.brand = bt.brand
-WHERE @target_country IS NULL OR cn.country = @target_country
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+-- OPTIMIZATION 3: This filter is no longer needed here. --
+-- WHERE @target_country IS NULL OR cn.country = @target_country
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 ORDER BY bt.total_nar DESC, cn.date DESC;

@@ -14,9 +14,9 @@ base AS (
     f.netAmount,
     f.netCurrency,
     f.reqCurrency,
-    UPPER(a.name)  AS brand,           -- ✅ brand = account.name
-    UPPER(a.`group`) AS `group`,       -- ✅ group = account.group
-    CASE 
+    UPPER(a.name)  AS brand,       -- ✅ brand = account.name
+    UPPER(a.`group`) AS `group`,     -- ✅ group = account.group
+    CASE
       WHEN f.reqCurrency = 'THB' THEN 'TH'
       WHEN f.reqCurrency = 'PHP' THEN 'PH'
       WHEN f.reqCurrency = 'BDT' THEN 'BD'
@@ -25,7 +25,7 @@ base AS (
       ELSE NULL
     END AS country
   FROM `kz-dp-prod.kz_pg_to_bq_realtime.ext_funding_tx` AS f
-  LEFT JOIN `kz-dp-prod.kz_pg_to_bq_realtime.account` a 
+  LEFT JOIN `kz-dp-prod.kz_pg_to_bq_realtime.account` a
     ON f.accountId = a.id
   CROSS JOIN params p
   WHERE f.type   = 'deposit'
@@ -33,6 +33,21 @@ base AS (
     -- UTC bounds covering [today-2 00:00 .. today+1 00:00) local
     AND f.completedAt >= TIMESTAMP(DATETIME(DATE_SUB(p.today_date, INTERVAL 2 DAY), TIME '00:00:00'), p.tz)
     AND f.completedAt <  TIMESTAMP(DATETIME(DATE_ADD(p.today_date,  INTERVAL 1 DAY), TIME '00:00:00'), p.tz)
+    ----------------------------------------------------------------------
+    -- OPTIMIZATION: Filter by country at the earliest possible step.
+    AND (@target_country IS NULL OR
+          CASE
+            WHEN f.reqCurrency = 'THB' THEN 'TH'
+            WHEN f.reqCurrency = 'PHP' THEN 'PH'
+            WHEN f.reqCurrency = 'BDT' THEN 'BD'
+            WHEN f.reqCurrency = 'PKR' THEN 'PK'
+            WHEN f.reqCurrency = 'IDR' THEN 'ID'
+            ELSE NULL
+          END = @target_country)
+    ----------------------------------------------------------------------
+  -- DEDUPLICATION: Keep only the latest record for each transaction ID.
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY f.id ORDER BY f.updatedAt DESC) = 1
+    ----------------------------------------------------------------------
 ),
 
 -- Cap every of the last 3 days at the SAME clock time (now_time in Bangkok)
@@ -76,10 +91,13 @@ SELECT
   c.AverageDeposit,
   ROUND(c.TotalDeposit, 0) AS TotalDeposit,
   ROUND(c.TotalDeposit / NULLIF(t.TotalToday, 0), 4) AS Weightage
-FROM consolidated c 
-LEFT JOIN today_total t 
+FROM consolidated c
+LEFT JOIN today_total t
   ON c.country = t.country
  AND c.`group` = t.`group`
  AND c.brand   = t.brand
-WHERE @target_country IS NULL OR c.country = @target_country
+--------------------------------------------------------------
+-- This filter is no longer needed here.
+-- WHERE @target_country IS NULL OR c.country = @target_country
+--------------------------------------------------------------
 ORDER BY c.date DESC, c.TotalDeposit DESC;
