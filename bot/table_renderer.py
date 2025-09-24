@@ -457,7 +457,7 @@ def render_channel_distribution(country: str, rows: list[dict], topn: int = 5) -
         replace_spacing("Avg".rjust(w_avg), x3, 0),
         "%".rjust(w_pct),
     ])
-    sepA = "-" * len(headerA)
+    # sepA = r"\\" + (r"-" * len(headerA))
 
     # --- Inline-code each line so Telegram preserves spacing ---
     def inline_code_line(s: str) -> str:
@@ -466,7 +466,7 @@ def render_channel_distribution(country: str, rows: list[dict], topn: int = 5) -
     # --- Build Table A: one line per row ---
     def inline_code(s: str) -> str:
         return f"`{s}`"
-    headerA = [wrap_separators(inline_code(headerA))]
+    # headerA = [wrap_separators(inline_code(headerA))]
 
     linesA = []
     for i in range(len(rows)):
@@ -485,7 +485,7 @@ def render_channel_distribution(country: str, rows: list[dict], topn: int = 5) -
     # --- Build Table B: index → channel mapping ---
     headerB = f"{'#'.rjust(w_idx)}  Channel"
 
-    sublinesB = [inline_code(headerB), inline_code(sepA)]
+    # sublinesB = [headerB]
     linesB = []
     for i, frags in enumerate(chan_wrapped, start=1):
         linesB.append(f"{str(i).rjust(w_idx)}  {frags[0]}")
@@ -493,12 +493,13 @@ def render_channel_distribution(country: str, rows: list[dict], topn: int = 5) -
             linesB.append(f"{'   ' * w_idx}  {frag}")
 
     codeA = [wrap_separators(inline_code_line(l)) for l in linesA]
-    codeB = [escape_md_v2(l) for l in linesB]
 
-    # Final output
-    # headerA = "\n".join(headerA)
-    # sublinesB = "\n".join(sublinesB)
-    return "\n".join([title, *headerA, *codeA, "", *sublinesB, *codeB])
+    codeB = [escape_md_v2(l) for l in linesB]
+    halfB = f"`{"\n".join([*codeB])}`"
+
+    print("\n".join([title, *codeA]))
+    return "\n".join([title,*codeA, "", halfB])
+    # return "\n".join([title, *headerA, *codeA, "", *sublinesB, *codeB])
 
 async def send_channel_distribution(update: Update, country_groups: dict[str, list[dict]], max_width: int = 35):
     for country, rows in sorted(country_groups.items()):
@@ -506,6 +507,9 @@ async def send_channel_distribution(update: Update, country_groups: dict[str, li
         # fancy = stylize(text, style = "mono")
         await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN_V2,
             disable_web_page_preview=False)
+        
+        # await update.message.reply_text(textB, parse_mode=ParseMode.MARKDOWN_V2,
+        #     disable_web_page_preview=False)
         
 async def send_channel_distribution_v2(update: Update, country_groups: dict[str, list[dict]], max_width: int = 35):
     for country, rows in sorted(country_groups.items()):
@@ -1000,19 +1004,27 @@ def wrap_separators(s: str) -> str:
         return s
     i = 0
     result = []
+
     for ch in s:
         if ch == "-":
             result.append("`\\-`")
             i += 1
         elif ch == ",":
-            result.append("`\\,`")
+            result.append("`,`")
             i += 1
         elif ch == ":":
             result.append("` `")
-            i += 1
+            # i += 1
+            # if i == count_:
+                # result.append(f"`{" "*i}`")
         else:
             result.append(ch)
-    return "".join(result)
+
+    final_result= "".join(result)
+    # print("RESULT:", final_result)
+    final_result = final_result.replace("` `` `", " ")
+    print("RESULT:", final_result)
+    return final_result
 
 import re
 
