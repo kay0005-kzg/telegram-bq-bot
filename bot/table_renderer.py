@@ -128,7 +128,7 @@ def count_separators(s: str) -> int:
 
 current_time, _ = get_date_range_header()
 
-def render_apf_table_v2(country, rows, max_width=72, brand=False):
+def render_apf_table_v2(country, rows, max_width=72, brand=False, widths=None, separators=None):
     FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩"}
     flag = FLAGS.get(country, "")
     
@@ -137,27 +137,32 @@ def render_apf_table_v2(country, rows, max_width=72, brand=False):
     for r in rows:
         brand_groups[r.get("brand", "Unknown")].append(r)
 
-    # widths computed from what you'll actually print
-    dates_all = [str(r.get("date","")) for r in rows]
-    nars_all  = [str(_fmt_number(r.get("NAR", 0))) for r in rows]
-    ftds_all  = [str(_fmt_number(r.get("FTD", 0))) for r in rows]
-    stds_all  = [str(_fmt_number(r.get("STD", 0))) for r in rows]
-    ttds_all  = [str(_fmt_number(r.get("TTD", 0))) for r in rows]
+  # Use provided widths/separators or calculate them if not provided
+    if widths and separators:
+        w0, w1, w2, w3, w4 = widths
+        x0, x1, x2, x3, x4 = separators
+    else:
+        # widths computed from what you'll actually print
+        dates_all = [str(r.get("date","")) for r in rows]
+        nars_all  = [str(_fmt_number(r.get("NAR", 0))) for r in rows]
+        ftds_all  = [str(_fmt_number(r.get("FTD", 0))) for r in rows]
+        stds_all  = [str(_fmt_number(r.get("STD", 0))) for r in rows]
+        ttds_all  = [str(_fmt_number(r.get("TTD", 0))) for r in rows]
 
-    w0 = max(len("Date"), *(len(x) for x in dates_all)) if dates_all else len("Date")
-    x0 = max(count_separators("Date"), *(count_separators(x) for x in dates_all)) if dates_all else count_separators("Date")
+        w0 = max(len("Date"), *(len(x) for x in dates_all)) if dates_all else len("Date")
+        x0 = max(count_separators("Date"), *(count_separators(x) for x in dates_all)) if dates_all else count_separators("Date")
 
-    w1 = max(len("NAR"), *(len(x) for x in nars_all)) if nars_all else len("NAR")
-    x1 = max(count_separators("NAR"), *(count_separators(x) for x in nars_all)) if nars_all else count_separators("NAR")
+        w1 = max(len("NAR"), *(len(x) for x in nars_all)) if nars_all else len("NAR")
+        x1 = max(count_separators("NAR"), *(count_separators(x) for x in nars_all)) if nars_all else count_separators("NAR")
 
-    w2 = max(len("FTD"), *(len(x) for x in ftds_all)) if ftds_all else len("FTD")
-    x2 = max(count_separators("FTD"), *(count_separators(x) for x in ftds_all)) if ftds_all else count_separators("FTD")
+        w2 = max(len("FTD"), *(len(x) for x in ftds_all)) if ftds_all else len("FTD")
+        x2 = max(count_separators("FTD"), *(count_separators(x) for x in ftds_all)) if ftds_all else count_separators("FTD")
 
-    w3 = max(len("STD"), *(len(x) for x in stds_all)) if stds_all else len("STD")
-    x3 = max(count_separators("STD"), *(count_separators(x) for x in stds_all)) if stds_all else count_separators("STD")
+        w3 = max(len("STD"), *(len(x) for x in stds_all)) if stds_all else len("STD")
+        x3 = max(count_separators("STD"), *(count_separators(x) for x in stds_all)) if stds_all else count_separators("STD")
 
-    w4 = max(len("TTD"), *(len(x) for x in ttds_all)) if ttds_all else len("TTD")
-    x4 = max(count_separators("TTD"), *(count_separators(x) for x in ttds_all)) if ttds_all else count_separators("TTD")
+        w4 = max(len("TTD"), *(len(x) for x in ttds_all)) if ttds_all else len("TTD")
+        x4 = max(count_separators("TTD"), *(count_separators(x) for x in ttds_all)) if ttds_all else count_separators("TTD")
 
     list_seperators = [x0 + x1, x2, x3, x4, 0]
     print(list_seperators)
@@ -279,27 +284,48 @@ def render_group_then_brands(country: str, group_name: str, group_rows: list[dic
       2) Separator line
       3) All brands of this group (your existing brand-grouped table)
     """
-    # 1) GROUP summary as a pseudo-brand (so it prints as one block)
     group_label = f"{group_name.upper()}"
     group_summary_rows = _aggregate_by_date_for_group(group_rows, group_label)
 
-    # 3) BRAND breakdown (your function already groups by brand inside)
-    brands_block = render_apf_table_v2(country, group_rows, max_width=max_width, brand = True)
-
-    if (country != "BD") & (country != "PK"):
-        group_block = render_apf_table_v2(country, group_summary_rows, max_width=max_width)
-        # 2) Separator
-        sep_line = "—" * 10
-
-        return "\n".join([group_block,sep_line, brands_block])
+   # 1. Combine all rows to find the maximum possible width
+    all_rows = group_summary_rows + group_rows
     
-    flag = FLAGS.get(country, "")
-    # title = stylize(f"*{escape_md_v2(f'COUNTRY: {country} {flag}')}*", style="sans_bold")
-    # subtitle = "\n" + escape_md_v2(f"Acquisition Summary by Group \n(up to {current_time} GMT+7)")
+    dates_all = [str(r.get("date","")) for r in all_rows]
+    nars_all  = [str(_fmt_number(r.get("NAR", 0))) for r in all_rows]
+    ftds_all  = [str(_fmt_number(r.get("FTD", 0))) for r in all_rows]
+    stds_all  = [str(_fmt_number(r.get("STD", 0))) for r in all_rows]
+    ttds_all  = [str(_fmt_number(r.get("TTD", 0))) for r in all_rows]
+
+    w0 = max(len("Date"), *(len(x) for x in dates_all)) if dates_all else len("Date")
+    x0 = max(count_separators("Date"), *(count_separators(x) for x in dates_all)) if dates_all else count_separators("Date")
+
+    w1 = max(len("NAR"), *(len(x) for x in nars_all)) if nars_all else len("NAR")
+    x1 = max(count_separators("NAR"), *(count_separators(x) for x in nars_all)) if nars_all else count_separators("NAR")
+
+    w2 = max(len("FTD"), *(len(x) for x in ftds_all)) if ftds_all else len("FTD")
+    x2 = max(count_separators("FTD"), *(count_separators(x) for x in ftds_all)) if ftds_all else count_separators("FTD")
+
+    w3 = max(len("STD"), *(len(x) for x in stds_all)) if stds_all else len("STD")
+    x3 = max(count_separators("STD"), *(count_separators(x) for x in stds_all)) if stds_all else count_separators("STD")
+
+    w4 = max(len("TTD"), *(len(x) for x in ttds_all)) if ttds_all else len("TTD")
+    x4 = max(count_separators("TTD"), *(count_separators(x) for x in ttds_all)) if ttds_all else count_separators("TTD")
+    
+    common_widths = (w0, w1, w2, w3, w4)
+    common_separators = (x0, x1, x2, x3, x4)
+
+   # 2. Render both blocks using the common widths/separators
+    if (country != "BD") and (country != "PK"):
+        group_block = render_apf_table_v2(country, group_summary_rows, max_width=max_width, widths=common_widths, separators=common_separators)
+        brands_block = render_apf_table_v2(country, group_rows, max_width=max_width, brand=True, widths=common_widths, separators=common_separators)
+        sep_line = "—" * 10
+        return "\n".join([group_block, sep_line, brands_block])
+    
+    current_time, _ = get_date_range_header()
     subtitle = escape_md_v2(f"{country} Acquisition Summary by Group \n(up to {current_time} GMT+7)")
-    # title_line = title + subtitle
-    title_line = subtitle
-    parts = [title_line, brands_block]
+    brands_block = render_apf_table_v2(country, group_rows, max_width=max_width, brand=True, widths=common_widths, separators=common_separators)
+    
+    parts = [subtitle, brands_block]
     return "\n".join(parts)
 
 def _aggregate_by_date_all(rows, brand_label="ALL GROUPS TOTAL"):
@@ -758,7 +784,7 @@ def escape_md_v2(text: str) -> str:
     # escape the full Telegram set
     return re.sub(r"([_*[\]()~`>#+\-=\|{}\.!])", r"\\\1", text)
 
-def render_dpf_table_v2(country, rows, max_width=72, brand=False):
+def render_dpf_table_v2(country, rows, max_width=72, brand=False, widths=None, separators=None):
     # --- helpers used here are assumed to exist in your env:
     # escape_md_v2, stylize, inline_code_line, wrap_separators, backtick_with_trailing_spaces
     # _num_to_float, _fmt_commas0, _fmt_pct_int, _shrink_date, _sum_field,
@@ -810,22 +836,26 @@ def render_dpf_table_v2(country, rows, max_width=72, brand=False):
             _fmt_commas0(r["TotalDeposit"]),
             _fmt_pct_int(r["Weightage"])
         )
+       # Use provided widths/separators or calculate them if not provided
+    if widths and separators:
+        w0, w1, w2, w3 = widths
+        x0, x1, x2, x3 = separators
+    else:
+        # collect for width + separator counts
+        dates_all, avgs_all, totals_all, w_all = [], [], [], []
+        for r in prepped:
+            d, a, t, w = _row_strs(r)
+            dates_all.append(d); avgs_all.append(a); totals_all.append(t); w_all.append(w)
 
-    # collect for width + separator counts
-    dates_all, avgs_all, totals_all, w_all = [], [], [], []
-    for r in prepped:
-        d, a, t, w = _row_strs(r)
-        dates_all.append(d); avgs_all.append(a); totals_all.append(t); w_all.append(w)
+        w0 = max(len("Date"),  *(len(s) for s in dates_all)) if dates_all else len("Date")
+        w1 = max(len("Avg"),   *(len(s) for s in avgs_all))  if avgs_all else len("Avg")
+        w2 = max(len("Total"), *(len(s) for s in totals_all))if totals_all else len("Total")
+        w3 = max(len("%"),     *(len(s) for s in w_all))     if w_all     else len("%")
 
-    w0 = max(len("Date"),  *(len(s) for s in dates_all)) if dates_all else len("Date")
-    w1 = max(len("Avg"),   *(len(s) for s in avgs_all))  if avgs_all else len("Avg")
-    w2 = max(len("Total"), *(len(s) for s in totals_all))if totals_all else len("Total")
-    w3 = max(len("%"),     *(len(s) for s in w_all))     if w_all     else len("%")
-
-    x0 = max(count_separators("Date"),  *(count_separators(x) for x in dates_all))  if dates_all  else count_separators("Date")
-    x1 = max(count_separators("Avg"),   *(count_separators(x) for x in avgs_all))   if avgs_all   else count_separators("Avg")
-    x2 = max(count_separators("Total"), *(count_separators(x) for x in totals_all)) if totals_all else count_separators("Total")
-    x3 = max(count_separators("%"),     *(count_separators(x) for x in w_all))      if w_all      else count_separators("%")
+        x0 = max(count_separators("Date"),  *(count_separators(x) for x in dates_all))  if dates_all  else count_separators("Date")
+        x1 = max(count_separators("Avg"),   *(count_separators(x) for x in avgs_all))   if avgs_all   else count_separators("Avg")
+        x2 = max(count_separators("Total"), *(count_separators(x) for x in totals_all)) if totals_all else count_separators("Total")
+        x3 = max(count_separators("%"),     *(count_separators(x) for x in w_all))      if w_all      else count_separators("%")
 
     # widths = (w0, w1, w2, w3)
     list_separators = [x0 + x1, x2, x3, 0]
@@ -947,27 +977,49 @@ def _aggregate_dpf_by_date(rows: list[dict], pseudo_brand: str):
     return collapsed
 
 # ------- DPF group -> brands (no inline tick; figure spaces) -------
+
 def render_dpf_group_then_brands(country: str, group_name: str, group_rows: list[dict], max_width=72) -> str:
-    # 1) GROUP summary (pseudo-brand)
+    # 1. Aggregate group summary data
     group_summary_rows = _aggregate_dpf_by_date(group_rows, pseudo_brand=group_name.upper())
+    
+    # 2. **Calculate widths based on group summary data**
+    temp_rows = []
+    for r in group_summary_rows:
+        d = str(r.get("date", "")).replace("/", "")
+        a = _fmt_commas0(r["AverageDeposit"]) if r["AverageDeposit"] is not None else "-"
+        t = _fmt_commas0(r["TotalDeposit"])
+        w = _fmt_pct_int(r["Weightage"])
+        temp_rows.append((d, a, t, w))
+
+    dates_all, avgs_all, totals_all, w_all = zip(*temp_rows)
+
+    w0 = max(len("Date"), *(len(s) for s in dates_all))
+    w1 = max(len("Avg"), *(len(s) for s in avgs_all))
+    w2 = max(len("Total"), *(len(s) for s in totals_all))
+    w3 = max(len("%"), *(len(s) for s in w_all))
+
+    x0 = max(count_separators("Date"), *(count_separators(x) for x in dates_all))
+    x1 = max(count_separators("Avg"), *(count_separators(x) for x in avgs_all))
+    x2 = max(count_separators("Total"), *(count_separators(x) for x in totals_all))
+    x3 = max(count_separators("%"), *(count_separators(x) for x in w_all))
+
+    common_widths = (w0, w1, w2, w3)
+    common_separators = (x0, x1, x2, x3)
 
        # 3) BRAND breakdown (your function already groups by brand inside)
     brands_block = render_dpf_table_v2(country, group_rows, max_width=max_width, brand = True)
-
-    if (country != "BD") & (country != "PK"):
-        group_block = render_dpf_table_v2(country, group_summary_rows, max_width=max_width)
-        # 2) Separator
-        sep_line = "—" * 10
-
-        return "\n".join([group_block,sep_line, brands_block])
     
-    flag = FLAGS.get(country, "")
-    # title = stylize(f"*{escape_md_v2(f'COUNTRY: {country} {flag}')}*", style="sans_bold")
-    # subtitle = "\n" + escape_md_v2(f"Deposit Summary by Group \n(up to {current_time} GMT+7)")
-    subtitle = escape_md_v2(f"Deposit Summary by Group \n(up to {current_time} GMT+7)")
-    # title_line = title + subtitle
-    title_line = subtitle
-    parts = [title_line, brands_block]
+    # 3. Call render_dpf_table_v2 for both tables, passing the common widths
+    group_block = render_dpf_table_v2(country, group_summary_rows, max_width=max_width, widths=common_widths, separators=common_separators)
+    brands_block = render_dpf_table_v2(country, group_rows, max_width=max_width, brand=True, widths=common_widths, separators=common_separators)
+    
+    if (country != "BD") and (country != "PK"):
+        sep_line = "—" * 10
+        return "\n".join([group_block, sep_line, brands_block])
+    
+    current_time, _ = get_date_range_header()
+    subtitle = escape_md_v2(f"{country} Deposit Summary by Group \n(up to {current_time} GMT+7)")
+    parts = [subtitle, brands_block]
 
     return "\n".join(parts)
 

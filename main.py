@@ -719,6 +719,7 @@ class RealTimeBot:
         # Common footer
         parts.append("*📍 Supported Countries:* TH, PH, BD, PK, ID")
         parts.append("*🕒 Timezone:* GMT+7")
+        parts.append("_Please reduce your font size if the table appears misaligned_")
 
         text = "\n".join(parts)
         await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
