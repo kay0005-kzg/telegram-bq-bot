@@ -420,13 +420,13 @@ def render_channel_distribution(country: str, rows: list[dict], topn: int = 5) -
         return text
 
     raw_title = f"COUNTRY: {country} {flag} - ({currency})"
-    title = stylize(f"*{escape_md_v2(raw_title)}*", style="sans_bold")
+    # title = stylize(f"*{escape_md_v2(raw_title)}*", style="sans_bold")
+    title = f"{country} Total Summary"
 
     # --- Prepare strings ---
     channels = [str(r.get("method",""))
-                .replace("-bd","").replace("-id","").replace("-pk","")
-                .replace("native","nat").replace("bank-transfer","bank")
-                .replace("-ph","").replace("qr-code","qr").replace("direct","dir")
+                .replace("-bd","").replace("-id","").replace("-pk","").replace("bank-transfer","bank")
+                .replace("-ph","").replace("qr-code","qr").replace("vcpay-native", "vcpay")
                 for r in rows]
     counts  = [str(_fmt_number(r.get("deposit_tnx_count"))) for r in rows]
     vols    = [str(_fmt_number(r.get("total_deposit_amount_native"))) for r in rows]
@@ -457,7 +457,7 @@ def render_channel_distribution(country: str, rows: list[dict], topn: int = 5) -
         replace_spacing("Avg".rjust(w_avg), x3, 0),
         "%".rjust(w_pct),
     ])
-    # sepA = r"\\" + (r"-" * len(headerA))
+    sepA = (r"-" * len(headerA))
 
     # --- Inline-code each line so Telegram preserves spacing ---
     def inline_code_line(s: str) -> str:
@@ -492,13 +492,16 @@ def render_channel_distribution(country: str, rows: list[dict], topn: int = 5) -
         for frag in frags[1:]:
             linesB.append(f"{'   ' * w_idx}  {frag}")
 
-    codeA = [wrap_separators(inline_code_line(l)) for l in linesA]
+    # White comma
+    # codeA = [wrap_separators(inline_code_line(l)) for l in linesA]
+
+    codeA = [(inline_code_line(l)) for l in linesA]
 
     codeB = [escape_md_v2(l) for l in linesB]
     halfB = f"`{"\n".join([*codeB])}`"
-
+    print(halfB)
     print("\n".join([title, *codeA]))
-    return "\n".join([title,*codeA, "", halfB])
+    return "\n".join([title,*codeA, "", inline_code(escape_md_v2(sepA)), halfB])
     # return "\n".join([title, *headerA, *codeA, "", *sublinesB, *codeB])
 
 async def send_channel_distribution(update: Update, country_groups: dict[str, list[dict]], max_width: int = 35):
@@ -901,7 +904,7 @@ def replace_spacing(s: str, max_sep: int, cur_sep: int):
     if cur_sep < max_sep:
         dif = max_sep - cur_sep
         print(s.replace(" "*dif, f"`{" "*dif}`"), 1)
-        return s.replace(" "*dif, f"{":"*dif}", 1)
+        return s.replace(" "*dif, f"{" "*dif}", 1)
     else:
         return s
     
@@ -1000,31 +1003,34 @@ def wrap_separators(s: str) -> str:
       '2025-09-12  2,832,000  6 1 0'
     →  '2025`\\-`09`\\-`12 2`\\,`832`\\,`000 6 1 0'
     """
-    if not s:
-        return s
-    i = 0
-    result = []
 
-    for ch in s:
-        if ch == "-":
-            result.append("`\\-`")
-            i += 1
-        elif ch == ",":
-            result.append("`,`")
-            i += 1
-        elif ch == ":":
-            result.append("` `")
-            # i += 1
-            # if i == count_:
-                # result.append(f"`{" "*i}`")
-        else:
-            result.append(ch)
+    ## NOT USING THIS NOW
+    # if not s:
+    #     return s
+    # i = 0
+    # result = []
 
-    final_result= "".join(result)
+    # for ch in s:
+    #     if ch == "-":
+    #         result.append("`\\-`")
+    #         i += 1
+    #     elif ch == ",":
+    #         result.append("`,`")
+    #         i += 1
+    #     elif ch == ":":
+    #         result.append("` `")
+    #         # i += 1
+    #         # if i == count_:
+    #             # result.append(f"`{" "*i}`")
+    #     else:
+    #         result.append(ch)
+
+    # final_result= "".join(result)
+    # # print("RESULT:", final_result)
+    # final_result = final_result.replace("` `` `", " ")
     # print("RESULT:", final_result)
-    final_result = final_result.replace("` `` `", " ")
-    print("RESULT:", final_result)
-    return final_result
+    # return final_result
+    return s
 
 import re
 

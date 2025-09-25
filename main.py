@@ -866,8 +866,7 @@ class RealTimeBot:
             header_text = (
                 f"📊 *Deposit Channel Distribution* \n"
                 f"⏰ Date: {target_date}\n"
-                f"`.nat` ~ `native`\n"
-                f"`.dir` ~ `direct`"
+
             )
             await update.message.reply_text(header_text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
 
