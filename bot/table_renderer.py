@@ -4,7 +4,7 @@ from textwrap import wrap
 from collections import defaultdict
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-
+import asyncio
 import time
 
 # ---- unicode "font" converter ----
@@ -392,21 +392,23 @@ async def send_apf_tables(update: Update, country_groups, max_width=72, max_leng
             
             for chunk in split_table_text_customize(msg, first_len=2000):
                 # safe_chunk = escape_md_v2(chunk)
-                await update.message.reply_text(
+                await update.effective_chat.send_message(
                     chunk,
                     parse_mode=ParseMode.MARKDOWN_V2,
                     disable_web_page_preview=False
                 )
+                await asyncio.sleep(1)
 
         # --- country GRAND TOTAL by date (all groups/brands) ---
         total_msg = render_country_total(country, rows, max_width=max_width)
         for chunk in split_table_text_customize(total_msg, first_len=2000):
             # safe_chunk = escape_md_v2(chunk)
-            await update.message.reply_text(
+            await update.effective_chat.send_message(
                 chunk,
                 parse_mode=ParseMode.MARKDOWN_V2,
                 disable_web_page_preview=True
             )
+            await asyncio.sleep(1)
 
 # ---------- Channel distribution rendering ----------
 def _to_percent_number(val) -> float:
@@ -545,17 +547,17 @@ async def send_channel_distribution(update: Update, country_groups: dict[str, li
     for country, rows in sorted(country_groups.items()):
         text = render_channel_distribution(country, rows)
         # fancy = stylize(text, style = "mono")
-        await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN_V2,
+        await update.effective_chat.send_message(text, parse_mode=ParseMode.MARKDOWN_V2,
             disable_web_page_preview=False)
         
-        # await update.message.reply_text(textB, parse_mode=ParseMode.MARKDOWN_V2,
+        # await update.effective_chat.send_message(textB, parse_mode=ParseMode.MARKDOWN_V2,
         #     disable_web_page_preview=False)
         
 async def send_channel_distribution_v2(update: Update, country_groups: dict[str, list[dict]], max_width: int = 35):
     for country, rows in sorted(country_groups.items()):
         text = render_channel_distribution(country, rows)
         # fancy = stylize(text, style = "mono")
-        await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN_V2,
+        await update.effective_chat.send_message(text, parse_mode=ParseMode.MARKDOWN_V2,
             disable_web_page_preview=False)
 
 # Constants
@@ -1049,20 +1051,22 @@ async def send_dpf_tables(update: Update, country_groups: dict[str, list[dict]],
         for gname, g_rows in groups_sorted:
             msg = render_dpf_group_then_brands(country, gname, g_rows, max_width=max_width)
             for chunk in split_table_text_customize(msg, first_len=2000):
-                await update.message.reply_text(
+                await update.effective_chat.send_message(
                 chunk, 
                 parse_mode=ParseMode.MARKDOWN_V2,
                 disable_web_page_preview=True
                 )
+                await asyncio.sleep(1)
 
         # final country GRAND TOTAL by date
         total_msg = render_dpf_country_total(country, rows, max_width=max_width)
         for chunk in split_table_text_customize(total_msg, first_len=2000):
-            await update.message.reply_text(
+            await update.effective_chat.send_message(
             chunk, 
             parse_mode=ParseMode.MARKDOWN_V2, 
             disable_web_page_preview=True
             )
+            await asyncio.sleep(1)
 
 
 # %%%

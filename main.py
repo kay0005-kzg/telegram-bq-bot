@@ -353,7 +353,7 @@ class RealTimeBot:
         # Admin guard
         logger.info("Admin create link requested by user_id=%s", update.effective_user.id if update.effective_user else "unknown")
         if not self._is_admin(update):
-            return await update.message.reply_text("⚠️ You are not authorized to create invite links.")
+            return await update.effective_chat.send_message("⚠️ You are not authorized to create invite links.")
 
         def _parse_ttl(s: str) -> int:
             s = s.lower().strip()
@@ -382,7 +382,7 @@ class RealTimeBot:
                 valid = {"apf", "dpf", "dist"}
                 bad = [c for c in cmds if c not in valid]
                 if bad:
-                    return await update.message.reply_text(
+                    return await update.effective_chat.send_message(
                         f"⚠️ Unknown command(s): {', '.join(bad)}. Allowed: /apf, /dpf, /dist"
                     )
                 allowed_commands = cmds if cmds else []  # [] means block all
@@ -427,7 +427,7 @@ class RealTimeBot:
         logger.info("invite_link args parsed: ttl=%s, max_uses=%s, cmds=%s, note=%r",
                     ttl_seconds, max_uses, allowed_commands, note)
 
-        return await update.message.reply_text(
+        return await update.effective_chat.send_message(
             "🔗 Invite link created:\n"
             f"{link}\n\n"
             f"⏳ Expires in ~{ttl_seconds//3600}h\n"
@@ -516,14 +516,14 @@ class RealTimeBot:
     #     """
     #     user = update.effective_user
     #     if not user:
-    #         await update.message.reply_text("⚠️ Cannot identify user.")
+    #         await update.effective_chat.send_message("⚠️ Cannot identify user.")
     #         return False
 
     #     allowed = self._user_allowed_commands(user.id)
     #     if allowed is None or cmd.lower() in allowed:
     #         return True
 
-    #     await update.message.reply_text(
+    #     await update.effective_chat.send_message(
     #         f"⛔ This command is not enabled for you.\n"
     #         f"Allowed: /{', '.join(sorted(allowed)) if allowed else 'all'}\n"
     #         f"Ask an admin for the permission."
@@ -533,7 +533,7 @@ class RealTimeBot:
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         if not user:
-            return await update.message.reply_text("⚠️ Could not identify user.")
+            return await update.effective_chat.send_message("⚠️ Could not identify user.")
 
         uid = int(user.id)
         logger.info("/start args=%r user_id=%s", context.args, uid)
@@ -543,7 +543,7 @@ class RealTimeBot:
         if token:
             is_valid, message, token_data = self.validate_invite_token(token)
             if not is_valid:
-                return await update.message.reply_text(f"⚠️ Registration failed: {message}")
+                return await update.effective_chat.send_message(f"⚠️ Registration failed: {message}")
 
             allowed = token_data.get("allowed_commands", None)
 
@@ -569,7 +569,7 @@ class RealTimeBot:
             self._save_registered_users()
             logger.info("User %s saved with allowed=%r", uid, allowed)
 
-            return await update.message.reply_text(
+            return await update.effective_chat.send_message(
                 "✅ Invite accepted.\n"
                 f"🛂 Allowed commands: "
                 f"{'all' if allowed is None else (', '.join(allowed) if allowed else 'All')}\n"
@@ -590,13 +590,13 @@ class RealTimeBot:
             # no allowed_commands field -> full access
         }
         self._save_registered_users()
-        return await update.message.reply_text("🎉 Registered. Type /help to begin.")
+        return await update.effective_chat.send_message("🎉 Registered. Type /help to begin.")
 
     async def register_now(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Manual registration command (kept for backward compatibility)"""
         user = update.effective_user
         if not user:
-            return await update.message.reply_text("⚠️ Could not identify user.")
+            return await update.effective_chat.send_message("⚠️ Could not identify user.")
 
         uid = int(user.id)
         if uid in self.registered_users:
@@ -608,7 +608,7 @@ class RealTimeBot:
                 "ts":         self.registered_users[uid].get("ts") or datetime.now(ZoneInfo("Asia/Bangkok")).isoformat(),
             })
             self._save_registered_users()
-            return await update.message.reply_text("✅ You are already registered!")
+            return await update.effective_chat.send_message("✅ You are already registered!")
 
         # New registration
         self.registered_users[uid] = {
@@ -620,7 +620,7 @@ class RealTimeBot:
         }
         self._save_registered_users()
 
-        await update.message.reply_text(
+        await update.effective_chat.send_message(
             f"🎉 Welcome, {user.first_name or 'User'}! You are now registered.\n"
             "Please get started by typing in `/help`."
         )
@@ -703,7 +703,7 @@ class RealTimeBot:
         visible_cmds = self._visible_commands_for_chat(update)
 
         if not visible_cmds:
-            return await update.message.reply_text(
+            return await update.effective_chat.send_message(
                 "🔒 No commands are enabled in this chat. Please contact an admin."
             )
 
@@ -722,7 +722,7 @@ class RealTimeBot:
         parts.append("_Please reduce your font size if the table appears misaligned_")
 
         text = "\n".join(parts)
-        await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
+        await update.effective_chat.send_message(text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
 
 
     async def apf_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -734,7 +734,7 @@ class RealTimeBot:
 
         # user = update.effective_user
         # if not user or user.id not in self.registered_users:
-        #     return await update.message.reply_text("⚠️ Please register first by contacting the admin.")
+        #     return await update.effective_chat.send_message("⚠️ Please register first by contacting the admin.")
         def normalize_brand(b):
             KEEP_BRANDS = {"96G", "BLG", "WDB"}
             s = "" if b is None else str(b).strip()
@@ -746,7 +746,7 @@ class RealTimeBot:
 
         try:
             if not context.args:
-                return await update.message.reply_text(
+                return await update.effective_chat.send_message(
                     "Please type the correct function: `/apf a` or `/apf <COUNTRY>` (TH, PH, BD, PK, ID)",
                     parse_mode=ParseMode.MARKDOWN,
                 )
@@ -757,7 +757,7 @@ class RealTimeBot:
                 scope_label = "all countries"
             else:
                 if sel not in self.config.APF_ALLOWED:
-                    return await update.message.reply_text(
+                    return await update.effective_chat.send_message(
                         f"❌ Unsupported country `{sel}`. Allowed: {', '.join(sorted(self.config.APF_ALLOWED))}"
                     )
                 selected_country = sel
@@ -765,7 +765,7 @@ class RealTimeBot:
 
             rows = await self.bq_client.execute_apf_query(selected_country)
             if not rows:
-                return await update.message.reply_text(f"No data for {scope_label}.")
+                return await update.effective_chat.send_message(f"No data for {scope_label}.")
 
             country_groups = {}
             for row in rows:
@@ -786,13 +786,13 @@ class RealTimeBot:
                 f"⏰ Data up to {current_time} (GMT+7) for each day \n"
                 f"📅 Date range: {date_range[2]} → {date_range[0]}"
             )
-            # await update.message.reply_text(header_text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
+            # await update.effective_chat.send_message(header_text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
 
             await send_apf_tables(update, country_groups, max_width=52, max_length=2400)
 
         except Exception as e:
             logger.exception("Error in /apf")
-            await update.message.reply_text(
+            await update.effective_chat.send_message(
                 f"Error: `{e}`\nLocation: {self.config.BQ_LOCATION}", 
                 parse_mode=ParseMode.MARKDOWN
             )
@@ -806,7 +806,7 @@ class RealTimeBot:
         """
         # user = update.effective_user
         # if not user or user.id not in self.registered_users:
-        #     return await update.message.reply_text("⚠️ Please register first by contacting the admin.")
+        #     return await update.effective_chat.send_message("⚠️ Please register first by contacting the admin.")
         
         if not await self._ensure_allowed(update, "dist"):
             return
@@ -817,7 +817,7 @@ class RealTimeBot:
         # })
         try:
             if len(context.args) < 2:
-                return await update.message.reply_text(
+                return await update.effective_chat.send_message(
                     "Usage: `/dist a <YYYYMMDD>` or `/dist <COUNTRY> <YYYYMMDD>`",
                     parse_mode=ParseMode.MARKDOWN
                 )
@@ -829,7 +829,7 @@ class RealTimeBot:
             try:
                 target_date = _parse_target_date(date_str)  # 'YYYY-MM-DD'
             except ValueError:
-                return await update.message.reply_text(
+                return await update.effective_chat.send_message(
                     "❌ Invalid date format. Use `YYYYMMDD` (e.g., `20250901`).",
                     parse_mode=ParseMode.MARKDOWN
                 )
@@ -840,7 +840,7 @@ class RealTimeBot:
                 target_label = "all countries"
             else:
                 if selector not in self.config.APF_ALLOWED:
-                    return await update.message.reply_text(
+                    return await update.effective_chat.send_message(
                         f"❌ Unsupported country `{selector}`. "
                         f"Allowed: {', '.join(sorted(self.config.APF_ALLOWED))}",
                         parse_mode=ParseMode.MARKDOWN
@@ -852,7 +852,7 @@ class RealTimeBot:
             rows = await self.bq_client.execute_dist_query(target_date, selected_country_value)
 
             if not rows:
-                return await update.message.reply_text(
+                return await update.effective_chat.send_message(
                     f"No results for {target_label} on {target_date}.",
                     parse_mode=ParseMode.MARKDOWN
                 )
@@ -869,14 +869,14 @@ class RealTimeBot:
                 f"⏰ Date: {target_date}\n"
 
             )
-            await update.message.reply_text(header_text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
+            await update.effective_chat.send_message(header_text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
 
             # Render (table_renderer handles native currency keys)
             await send_channel_distribution(update, country_groups, max_width=72)
 
         except Exception as e:
             logging.exception("Error in /dist")
-            await update.message.reply_text(
+            await update.effective_chat.send_message(
                 f"Error: `{e}`\nLocation: {self.config.BQ_LOCATION}",
                 parse_mode=ParseMode.MARKDOWN
             )
@@ -895,14 +895,14 @@ class RealTimeBot:
 
         # user = update.effective_user
         # if not user or user.id not in self.registered_users:
-        #     return await update.message.reply_text("⚠️ Please register first by contacting the admin.")
+        #     return await update.effective_chat.send_message("⚠️ Please register first by contacting the admin.")
         
         if not await self._ensure_allowed(update, "dpf"):
             return
         
         try:
             if not context.args:
-                return await update.message.reply_text(
+                return await update.effective_chat.send_message(
                     "Usage: `/dpf a` or `/dpf <COUNTRY>` (TH, PH, BD, PK, ID)",
                     parse_mode=ParseMode.MARKDOWN,
                 )
@@ -913,7 +913,7 @@ class RealTimeBot:
                 scope_label = "all countries"
             else:
                 if sel not in self.config.APF_ALLOWED:
-                    return await update.message.reply_text(
+                    return await update.effective_chat.send_message(
                         f"❌ Unsupported country `{sel}`. Allowed: {', '.join(sorted(self.config.APF_ALLOWED))}",
                         parse_mode=ParseMode.MARKDOWN,
                     )
@@ -922,7 +922,7 @@ class RealTimeBot:
 
             rows = await self.bq_client.execute_dpf_query(selected_country)
             if not rows:
-                return await update.message.reply_text(f"No deposit data for {scope_label}.")
+                return await update.effective_chat.send_message(f"No deposit data for {scope_label}.")
 
             country_groups: dict[str, list[dict]] = {}
             for r in rows:
@@ -942,13 +942,13 @@ class RealTimeBot:
                 f"📅 Date range: {date_range[2]} → {date_range[0]}\n"
                 "`%` ~ Percent vs. latest day’s total"
             )
-            # await update.message.reply_text(header_text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
+            # await update.effective_chat.send_message(header_text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
 
             await send_dpf_tables(update, country_groups, max_width=52)
 
         except Exception as e:
             logger.exception("Error in /dpf")
-            await update.message.reply_text(
+            await update.effective_chat.send_message(
                 f"Error: `{e}`\nLocation: {self.config.BQ_LOCATION}",
                 parse_mode=ParseMode.MARKDOWN
             )
@@ -1019,7 +1019,7 @@ class RealTimeBot:
         self._save_group_policies()
 
         # Build confirmation text (HTML-safe)
-        return await update.message.reply_text(
+        return await update.effective_chat.send_message(
                 "✅ Group policy updated.\n"
                 f"🛂 Allowed commands: "
                 f"{'all' if allowed is None else (', '.join(allowed) if allowed else 'All')}\n"
