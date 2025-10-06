@@ -10,8 +10,15 @@ from pathlib import Path
 
 from bot.config import Config
 from bot.bq_client import BigQueryClient
-from bot.table_renderer import send_apf_tables, send_channel_distribution, send_dpf_tables
+from bot.table_renderer import send_apf_tables, send_channel_distribution, send_dpf_tables, send_pmh_total
 
+from bot.table_renderer import (
+    render_deposit_provider_summary, render_withdrawal_provider_summary, 
+    process_deposits, process_withdrawals,
+    process_pmh_total, render_pmh_total_summary  # <-- ADD THESE
+)
+
+import pandas as pd
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -717,8 +724,8 @@ class RealTimeBot:
             parts.append("")  # blank line
 
         # Common footer
-        parts.append("*📍 Supported Countries:* TH, PH, BD, PK, ID")
-        parts.append("*🕒 Timezone:* GMT+7")
+        parts.append("*📍 Supported Countries:* TH, PH, BD, PK")
+        parts.append("*🕒 Timezone:* GMT+7\n")
         parts.append("_Please reduce your font size if the table appears misaligned_")
 
         text = "\n".join(parts)
@@ -747,7 +754,7 @@ class RealTimeBot:
         try:
             if not context.args:
                 return await update.effective_chat.send_message(
-                    "Please type the correct function: `/apf a` or `/apf <COUNTRY>` (TH, PH, BD, PK, ID)",
+                    "Please type the correct function: `/apf a` or `/apf <COUNTRY>` (TH, PH, BD, PK)",
                     parse_mode=ParseMode.MARKDOWN,
                 )
 
@@ -787,7 +794,6 @@ class RealTimeBot:
                 f"📅 Date range: {date_range[2]} → {date_range[0]}"
             )
             # await update.effective_chat.send_message(header_text, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
-
             await send_apf_tables(update, country_groups, max_width=52, max_length=2400)
 
         except Exception as e:
@@ -796,6 +802,89 @@ class RealTimeBot:
                 f"Error: `{e}`\nLocation: {self.config.BQ_LOCATION}", 
                 parse_mode=ParseMode.MARKDOWN
             )
+    async def pmh_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        Handles the /pmh command for Payment Health reports.
+        
+        If 'A' is selected for the country, it sends a separate report
+        for each configured country.
+        """
+        if not await self._ensure_allowed(update, "pmh"):
+            return
+        
+        try:
+            if len(context.args) < 3:
+                return await update.effective_chat.send_message(
+                    "Usage:\n"
+                    "`/pmh provider <COUNTRY/A> <YYYYMMDD>`\n"
+                    "`/pmh total <COUNTRY/A> <YYYYMMDD>`",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+
+            subcommand = context.args[0].lower().strip()
+            selector = context.args[1].upper().strip()
+            date_str = context.args[2].strip()
+
+            if subcommand not in ["provider", "total"]:
+                return await update.effective_chat.send_message("❌ Invalid subcommand. Use `provider` or `total`.")
+
+            try:
+                target_date = _parse_target_date(date_str)  # 'YYYY-MM-DD'
+                print(target_date)
+            except ValueError:
+                return await update.effective_chat.send_message("❌ Invalid date format. Use `YYYYMMDD`.")
+
+            countries_to_process = []
+            if selector == "A":
+                # If 'A' for All, populate the list with all allowed countries
+                countries_to_process = self.config.APF_ALLOWED
+                # await update.effective_chat.send_message(f"✅ Fetching reports for all {len(countries_to_process)} countries on {date_str}...")
+            else:
+                if selector not in self.config.APF_ALLOWED:
+                    return await update.effective_chat.send_message(f"❌ Unsupported country: `{selector}`.")
+                # If a single country, the list contains only that one
+                countries_to_process.append(selector)
+
+            # --- Loop through each country and generate a report ---
+            for country_code in countries_to_process:
+                country_label = country_code
+
+                # 1. Fetch data for the specific country
+                rows = await self.bq_client.execute_pmh_query(target_date, country_code)
+                if not rows:
+                    # Send a message if no data and continue to the next country
+                    await update.effective_chat.send_message(f"ℹ️ No data found for {country_label} on {target_date}.")
+                    continue
+                
+                df = pd.DataFrame(rows)
+
+                # 2. Execute subcommand logic for the current country's data
+                if subcommand == "total":
+                    # title = f"{country_label} Payment Health ({target_date})"
+                    # report_data = process_pmh_total(df)
+                    # message_text = render_pmh_total_summary(title, report_data)
+                    # await update.effective_chat.send_message(message_text, parse_mode=ParseMode.MARKDOWN_V2)
+
+                    await send_pmh_total(update, df, target_date)
+
+                elif subcommand == "provider":
+                    # Process and render deposits for the current country
+                    deposit_report_df = process_deposits(df)
+                    if not deposit_report_df.empty:
+                        title = f"Deposit by Provider ({country_label} - {target_date})"
+                        message_text = render_deposit_provider_summary(title, deposit_report_df)
+                        await update.effective_chat.send_message(message_text, parse_mode=ParseMode.MARKDOWN_V2)
+
+                    # Process and render withdrawals for the current country
+                    withdrawal_report_df = process_withdrawals(df)
+                    if not withdrawal_report_df.empty:
+                        title = f"Withdrawal by Provider ({country_label} - {target_date})"
+                        message_text = render_withdrawal_provider_summary(title, withdrawal_report_df)
+                        await update.effective_chat.send_message(message_text, parse_mode=ParseMode.MARKDOWN_V2)
+        
+        except Exception as e:
+            logger.exception("Error in /pmh")
+            await update.effective_chat.send_message(f"An error occurred in /pmh: `{e}`", parse_mode=ParseMode.MARKDOWN)
 
     async def dist_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
@@ -903,7 +992,7 @@ class RealTimeBot:
         try:
             if not context.args:
                 return await update.effective_chat.send_message(
-                    "Usage: `/dpf a` or `/dpf <COUNTRY>` (TH, PH, BD, PK, ID)",
+                    "Usage: `/dpf a` or `/dpf <COUNTRY>` (TH, PH, BD, PK)",
                     parse_mode=ParseMode.MARKDOWN,
                 )
 
@@ -1039,6 +1128,7 @@ class RealTimeBot:
         application.add_handler(CommandHandler("apf", self.apf_command))
         application.add_handler(CommandHandler("dist", self.dist_command))
         application.add_handler(CommandHandler("dpf", self.dpf_command))
+        application.add_handler(CommandHandler("pmh", self.pmh_command))
 
         application.add_handler(CommandHandler("admin_create_link", self.admin_create_link))
         application.add_handler(CommandHandler("permission", self.permission_command))

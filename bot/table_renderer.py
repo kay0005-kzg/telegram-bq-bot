@@ -5,6 +5,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import asyncio
+import numpy as np
 import time
 
 # ---- unicode "font" converter ----
@@ -194,16 +195,6 @@ def render_apf_table_v2(country, rows, max_width=72, brand=False, widths=None, s
     current_time, date_range = get_date_range_header()
 
     if not brand:
-        # title = stylize(f"*{escape_md_v2(f'COUNTRY: {country} {flag}')}*", style="sans_bold")
-
-        # if list(brand_groups.keys())[0] == "TOTAL":
-        #     subtitle = "\n" + escape_md_v2(f"Acquisition Summary by Country \n(up to {current_time} GMT+7)")
-        # else:
-        #     subtitle = "\n" + escape_md_v2(f"Acquisition Summary by Group \n(up to {current_time} GMT+7)")
-
-        # title_line = title + subtitle
-
-        # title = stylize(f"*{escape_md_v2(f'COUNTRY: {country} {flag}')}*", style="sans_bold")
 
         if list(brand_groups.keys())[0] == "TOTAL":
             subtitle = escape_md_v2(f"{country} Acquisition Summary by Country \n(up to {current_time} GMT+7)")
@@ -214,10 +205,8 @@ def render_apf_table_v2(country, rows, max_width=72, brand=False, widths=None, s
 
         parts = [title_line]
 
-        # Show separator + header ONCE (above first brand)
-        # parts.append(inline_code_line(sep))
         parts.append(wrap_separators(inline_code_line(header)))
-        # parts.append(inline_code_line(sep))
+
     else:
         if (country == "BD") or (country == "PK"):
             parts = [wrap_separators(inline_code_line(header))]
@@ -234,8 +223,7 @@ def render_apf_table_v2(country, rows, max_width=72, brand=False, widths=None, s
             parts.append("")  # blank line between brands
         first = False
         print(country, brand)
-        # if ((country != "BD") & (country != "PK")) & (brand == False):
-            # print("SUCCESS", country, brand)
+
         parts.append(stylize(f"*{escape_md_v2(str(brand_name))}*", style="sans_bold"))
         for r in items:
             parts.append(
@@ -550,16 +538,6 @@ async def send_channel_distribution(update: Update, country_groups: dict[str, li
         await update.effective_chat.send_message(text, parse_mode=ParseMode.MARKDOWN_V2,
             disable_web_page_preview=False)
         
-        # await update.effective_chat.send_message(textB, parse_mode=ParseMode.MARKDOWN_V2,
-        #     disable_web_page_preview=False)
-        
-async def send_channel_distribution_v2(update: Update, country_groups: dict[str, list[dict]], max_width: int = 35):
-    for country, rows in sorted(country_groups.items()):
-        text = render_channel_distribution(country, rows)
-        # fancy = stylize(text, style = "mono")
-        await update.effective_chat.send_message(text, parse_mode=ParseMode.MARKDOWN_V2,
-            disable_web_page_preview=False)
-
 # Constants
 FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩"}
 CURRENCIES = {"PH":"PHP","TH":"THB","BD":"BDT","PK":"PKR","ID":"IDR"}
@@ -611,140 +589,6 @@ def _fmt_pct_int(x):
 
 def inline_code_line(s: str) -> str:
     return f"`{str(s).replace('`','ˋ')}`"
-
-# # ------- DPF core table: mirrors render_apf_table -------
-# def render_dpf_table_official(country, rows, max_width=72, brand=False):
-#     # def replace_spacing(s: str, max_sep: int, cur_sep: int):
-#     #     if cur_sep < max_sep:
-#     #         dif = max_sep - cur_sep
-#     #         return s.replace(f"`{" "*dif}`")
-#     #     else:
-#     #         return s
-#     FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩"}
-#     CURRENCIES = {"TH":"THB","PH":"PHP","BD":"BDT","PK":"PKR","ID":"IDR"}
-#     flag     = FLAGS.get(country, "")
-#     currency = CURRENCIES.get(country, "")
-
-#     # group rows by brand
-#     brand_groups = defaultdict(list)
-#     for r in rows:
-#         brand_groups[r.get("brand", "Unknown")].append(r)
-
-#     # ensure Weightage per brand if missing: vs latest date in that brand
-#     prepped = []
-#     for b, items in brand_groups.items():
-#         # aggregate by date within brand (guard duplicates)
-#         by_date = {}
-#         for r in items:
-#             d = str(r.get("date", ""))
-#             by_date.setdefault(d, {"date": d, "brand": b, "AverageDeposit": [], "TotalDeposit": 0.0})
-#             by_date[d]["TotalDeposit"] += _num_to_float(r.get("TotalDeposit", 0))
-#             avgv = r.get("AverageDeposit", None)
-#             if avgv is not None:
-#                 by_date[d]["AverageDeposit"].append(_num_to_float(avgv))
-#         # collapse & sort desc
-#         collapsed = []
-#         for d, obj in by_date.items():
-#             avg_val = (sum(obj["AverageDeposit"])/len(obj["AverageDeposit"])) if obj["AverageDeposit"] else None
-#             collapsed.append({"date": d, "brand": b, "AverageDeposit": avg_val, "TotalDeposit": obj["TotalDeposit"]})
-#         collapsed.sort(key=lambda x: x["date"], reverse=True)
-#         # compute weight vs latest
-#         latest_total = collapsed[0]["TotalDeposit"] if collapsed else 0.0
-#         for r in collapsed:
-#             r["Weightage"] = (r["TotalDeposit"]/latest_total) if latest_total else None
-#         prepped.extend(collapsed)
-
-#     # widths from the exact strings we will render
-#     def _row_strs(r):
-#         return (
-#             _shrink_date(r["date"]),
-#             _fmt_commas0(r["AverageDeposit"]) if r["AverageDeposit"] is not None else "-",
-#             _fmt_commas0(r["TotalDeposit"]),
-#             _fmt_pct_int(r["Weightage"])  # just the integer (no % sign) to match your APF style
-#         )
-
-#     dates_all, avgs_all, totals_all, w_all = [], [], [], []
-#     for r in prepped:
-#         d, a, t, w = _row_strs(r)
-#         dates_all.append(d); avgs_all.append(a); totals_all.append(t); w_all.append(w)
-
-#     w0 = max(len("Date"),  *(len(s) for s in dates_all)) if dates_all else len("Date")
-#     x0 = max(count_separators("Date"), *(count_separators(x) for x in dates_all))
-
-#     w1 = max(len("Avg"),   *(len(s) for s in avgs_all))  if avgs_all else len("Avg")
-#     x1 = max(count_separators("Avg"), *(count_separators(x) for x in avgs_all))
-    
-#     w2 = max(len("Total"), *(len(s) for s in totals_all))if totals_all else len("Total")
-#     x2 = max(count_separators("Total"), *(count_separators(x) for x in totals_all))
-
-#     w3 = max(len("%"),     *(len(s) for s in w_all))     if w_all     else len("%")
-#     x3 = max(count_separators("%"), *(count_separators(x) for x in w_all))
-
-#     list_seperators = [x0+x1, x2 , x3 , 0]
-
-#     def fmt_row(d, a, t, w):
-#         return " `%`".join([
-#             d.ljust(w0),
-#             a.rjust(w1),
-#             t.rjust(w2),
-#             w.rjust(w3),
-#         ])
-    
-#     if brand == False:
-#         header = fmt_row("Date", "Avg", "Total", "%")
-#         sep    = "-" * len(header)
-        
-#     # --- build output like APF ---
-#     current_time, _ = get_date_range_header()
-#     flag = FLAGS.get(country, "")
-#     currency = CURRENCIES.get(country, "")
-#     if brand == 0:  # show big country header + table header once
-#         # title = stylize(f"*{escape_md_v2(f'COUNTRY: {country} {flag} - ({currency})')}*", style="sans_bold")
-#         # subtitle = "\n" + escape_md_v2(f"Deposit Performance (up to {current_time} GMT+7)")
-#         # parts = [title + subtitle, 
-#         #          inline_code_line(sep), 
-#         #          backtick_with_trailing_spaces(inline_code_line(header), list_seperators), 
-#         #          inline_code_line(sep)]
-#         # title = stylize(f"*{escape_md_v2(f'COUNTRY: {country} {flag} - ({currency})')}*", style="sans_bold")
-#         subtitle = escape_md_v2(f"{country} Deposit Performance (up to {current_time} GMT+7)")
-#         parts = [subtitle, 
-#                  inline_code_line(sep), 
-#                  backtick_with_trailing_spaces(inline_code_line(header), list_seperators), 
-#                  inline_code_line(sep)]
-#     else:
-#         parts = []
-
-#     # then each brand with only its rows (exactly like APF)
-#     first = True
-#     # sort brands by total NAR DESC
-#     brands_sorted = sorted(
-#         brand_groups.items(),
-#         key=lambda kv: _sum_field(kv[1], "NAR"),
-#         reverse=True
-#     )
-#     # brands_sorted = sorted({r["brand"] for r in prepped})
-#     print(prepped)
-#     for brand_name in brands_sorted:
-#         if not first:
-#             parts.append("")  # blank line between brands
-#         first = False
-
-#         parts.append(stylize(f"*{escape_md_v2(str(brand_name))}*", style="sans_bold"))
-#         for r in filter(lambda x: x["brand"] == brand_name, prepped):
-#             d, a, t, w = _row_strs(r)
-
-#             num_sep_a = count_separators(a)
-#             num_sep_t = count_separators(t)
-#             print(num_sep_a, a, replace_spacing(a.rjust(w1), max_sep=x1, cur_sep=num_sep_a))
-            
-#             parts.append(wrap_separators(inline_code_line(fmt_row(
-#             d.ljust(w0),
-#             replace_spacing(a.rjust(w1), max_sep=x1, cur_sep=num_sep_a),
-#             replace_spacing(t.rjust(w2), max_sep=x2, cur_sep=num_sep_t),
-#             w.rjust(w3)))))
-
-#     print(parts)
-#     return "\n".join(parts)
 
 FIG = "` `"  # figure space: same width as digits in proportional fonts
 
@@ -1068,6 +912,302 @@ async def send_dpf_tables(update: Update, country_groups: dict[str, list[dict]],
             )
             await asyncio.sleep(1)
 
+# -----------------------------------------------------------
+import pandas as pd
+# /pmh provider TH 20251006
+# --- Rendering Functions (No changes needed) ---
+def render_deposit_provider_summary(title: str, final_report: pd.DataFrame) -> str:
+    """Formats a DataFrame into a Telegram message for deposit summaries."""
+    providers = [escape_md_v2(str(r["Provider"])) for _, r in final_report.iterrows()]
+    counts = [str(r["#Depo"]) for _, r in final_report.iterrows()]
+    pct_3m = [str(r["%3m"]) for _, r in final_report.iterrows()]
+    timeouts = [str(r["Timeo"]) for _, r in final_report.iterrows()]
+    errors = [str(r["Error"]) for _, r in final_report.iterrows()]
+
+    w_provider = max(len("Provider"), *(len(p) for p in providers))
+    w_depo = max(len("#Depo"), *(len(c) for c in counts))
+    w_3m = max(len("%<3m"), *(len(p) for p in pct_3m))
+    w_timeout = max(len("Timeo"), *(len(t) for t in timeouts))
+    w_error = max(len("Error"), *(len(e) for e in errors))
+
+    header = " ".join([ "Provider".ljust(w_provider), "#Depo".rjust(w_depo), "%<3m".rjust(w_3m), "Timeo".rjust(w_timeout), "Error".rjust(w_error) ])
+    lines = [header]
+    for i in range(len(final_report)):
+        lines.append(" ".join([ providers[i].ljust(w_provider), counts[i].rjust(w_depo), pct_3m[i].rjust(w_3m), timeouts[i].rjust(w_timeout), errors[i].rjust(w_error) ]))
+    
+    message_body = "\n".join(lines)
+    return f"*{escape_md_v2(title)}*\n`{message_body}`"
+
+def render_withdrawal_provider_summary(title: str, final_report: pd.DataFrame) -> str:
+    """Formats a DataFrame into a Telegram message for withdrawal summaries."""
+    providers = [escape_md_v2(str(r["Provider"])) for _, r in final_report.iterrows()]
+    counts = [str(r["Withdraw"]) for _, r in final_report.iterrows()]
+    pct_5m = [str(r["%<5m"]) for _, r in final_report.iterrows()]
+    pct_15m = [str(r["%<15m"]) for _, r in final_report.iterrows()]
+
+    w_provider = max(len("Provider"), *(len(p) for p in providers))
+    w_withdraw = max(len("Withdraw"), *(len(c) for c in counts))
+    w_5m = max(len("%<5m"), *(len(p) for p in pct_5m))
+    w_15m = max(len("%<15m"), *(len(p) for p in pct_15m))
+
+    header = " ".join([ "Provider".ljust(w_provider), "Withdraw".rjust(w_withdraw), "%<5m".rjust(w_5m), "%<15m".rjust(w_15m) ])
+    lines = [header]
+    for i in range(len(final_report)):
+        lines.append(" ".join([ providers[i].ljust(w_provider), counts[i].rjust(w_withdraw), pct_5m[i].rjust(w_5m), pct_15m[i].rjust(w_15m) ]))
+        
+    message_body = "\n".join(lines)
+    return f"*{escape_md_v2(title)}*\n`{message_body}`"
+
+# --- Pandas Processing Functions (No changes needed) ---
+import pandas as pd
+import numpy as np
+
+def process_deposits(df: pd.DataFrame) -> pd.DataFrame:
+    deposits_df = df[df['tnx_type'] == 'DEPOSIT'].copy()
+    if deposits_df.empty: 
+        return pd.DataFrame()
+
+    provider_summary = deposits_df.pivot_table(
+        index='providerKey', 
+        columns='status', 
+        values='total_count', 
+        aggfunc='sum', 
+        fill_value=0
+    )
+
+    fast_transactions = deposits_df[deposits_df['status'] == 'completed'].groupby('providerKey')['transaction_within_180s'].sum()
+    provider_summary = provider_summary.join(fast_transactions, how='left').fillna(0)
+
+    # This line is already safe because it uses .get()
+    provider_summary['#Depo'] = provider_summary.get('completed', 0) + provider_summary.get('errors', 0) + provider_summary.get('timeout', 0)
+    
+    # Use .get(column, 0) to safely access columns that might not exist
+    completed_counts = provider_summary.get('completed', 0)
+    timeout_counts = provider_summary.get('timeout', 0)
+    error_counts = provider_summary.get('errors', 0)
+
+    # Now, calculate percentages safely. We define a simple function to avoid division by zero.
+    def safe_percent(numerator, denominator):
+        # np.divide handles division by zero gracefully, returning np.inf or 0.
+        with np.errstate(divide='ignore', invalid='ignore'):
+            result = np.divide(numerator, denominator) * 100
+        return np.nan_to_num(result) # Replaces NaN, inf with 0
+
+    provider_summary['%3m'] = safe_percent(provider_summary['transaction_within_180s'], completed_counts)
+    provider_summary['Timeo'] = safe_percent(timeout_counts, provider_summary['#Depo'])
+    provider_summary['Error'] = safe_percent(error_counts, provider_summary['#Depo'])
+    
+    # Final formatting remains the same
+    final_report = provider_summary[['#Depo', '%3m', 'Timeo', 'Error']].reset_index().rename(columns={'providerKey': 'Provider'})
+    final_report = final_report.sort_values(by='#Depo', ascending=False)
+    final_report['#Depo'] = final_report['#Depo'].map('{:,.0f}'.format)
+    final_report['%3m'] = final_report['%3m'].map('{:.0f}%'.format)
+    final_report['Timeo'] = final_report['Timeo'].map('{:.0f}%'.format)
+    final_report['Error'] = final_report['Error'].map('{:.0f}%'.format)
+    
+    return final_report
+
+def process_withdrawals(df: pd.DataFrame) -> pd.DataFrame:
+    # (The logic from the previous answer is unchanged)
+    withdrawals_df = df[df['tnx_type'] == 'WITHDRAWAL'].copy()
+    if withdrawals_df.empty: return pd.DataFrame()
+    provider_summary = withdrawals_df.groupby('providerKey').agg(Withdraw=('total_count', 'sum'))
+    completed_summary = withdrawals_df[withdrawals_df['status'] == 'completed'].groupby('providerKey').agg(CompletedWdraw=('total_count', 'sum'), FastWdraw_5m=('transaction_within_300s', 'sum'), FastWdraw_15m=('transaction_within_900s', 'sum'))
+    provider_summary = provider_summary.join(completed_summary, how='left').fillna(0)
+    provider_summary['%<5m'] = (provider_summary['FastWdraw_5m'] / provider_summary['CompletedWdraw'] * 100).replace([np.inf, -np.inf], 0).fillna(0)
+    provider_summary['%<15m'] = (provider_summary['FastWdraw_15m'] / provider_summary['CompletedWdraw'] * 100).replace([np.inf, -np.inf], 0).fillna(0)
+    final_report = provider_summary[['Withdraw', '%<5m', '%<15m']].reset_index().rename(columns={'providerKey': 'Provider'})
+    final_report = final_report.sort_values(by='Withdraw', ascending=False)
+    final_report['Withdraw'] = final_report['Withdraw'].map('{:,.0f}'.format)
+    final_report['%<5m'] = final_report['%<5m'].map('{:.0f}%'.format)
+    final_report['%<15m'] = final_report['%<15m'].map('{:.0f}%'.format)
+    return final_report
+
+# --- NEW: Asynchronous Sending Functions ---
+FLAGS = {"TH":"🇹🇭", "ID":"🇮🇩"}
+
+async def send_deposit_summary(update: Update, df: pd.DataFrame):
+    """Groups data by country, processes it, and sends a deposit summary for each."""
+    for country, country_df in df.groupby('country'):
+        flag = FLAGS.get(country, "")
+        title = f"Deposit by Provider ({country} {flag})"
+        
+        report_df = process_deposits(country_df)
+        if not report_df.empty:
+            text = render_deposit_provider_summary(title, report_df)
+            await update.effective_chat.send_message(text, parse_mode=ParseMode.MARKDOWN_V2)
+
+async def send_withdrawal_summary(update: Update, df: pd.DataFrame):
+    """Groups data by country, processes it, and sends a withdrawal summary for each."""
+    for country, country_df in df.groupby('country'):
+        flag = FLAGS.get(country, "")
+        title = f"Withdrawal by Provider ({country} {flag})"
+        
+        report_df = process_withdrawals(country_df)
+        if not report_df.empty:
+            text = render_withdrawal_provider_summary(title, report_df)
+            await update.effective_chat.send_message(text, parse_mode=ParseMode.MARKDOWN_V2)
+#-------------------------------------
+def process_pmh_total(dataframe: pd.DataFrame) -> dict:
+    """
+    Calculates all metrics for the total PMH summary report.
+    Returns a dictionary with the results.
+    """
+    if dataframe.empty:
+        return {}
+
+    # IMPORTANT: Define which providers or methods count as "Slipscan".
+    SLIPSCAN_PROVIDERS = ['slipscan_provider'] # <-- CUSTOMIZE THIS LIST
+
+    report = {}
+
+    # --- Pre-calculations ---
+    df_completed = dataframe[dataframe['status'] == 'completed'].copy()
+    df_completed['total_duration_seconds'] = df_completed['avg_diff_seconds_transaction'] * df_completed['total_count']
+    
+    # df_without_slipscan = dataframe[~dataframe['providerKey'].isin(SLIPSCAN_PROVIDERS)]
+    # df_completed_without_slipscan = df_completed[~df_completed['providerKey'].isin(SLIPSCAN_PROVIDERS)]
+
+    deposits_df = dataframe[dataframe['tnx_type'] == 'DEPOSIT']
+    withdrawals_df = dataframe[dataframe['tnx_type'] == 'WITHDRAWAL']
+    completed_deposits_df = df_completed[df_completed['tnx_type'] == 'DEPOSIT']
+    completed_withdrawals_df = df_completed[df_completed['tnx_type'] == 'WITHDRAWAL']
+
+    # -- DEPOSITS --
+    report['deposit_total'] = deposits_df['total_count'].sum()
+    report['deposit_complete'] = completed_deposits_df['total_count'].sum()
+    report['deposit_under_3m_count'] = completed_deposits_df['transaction_within_180s'].sum()
+    report['deposit_pct_under_3m'] = (report['deposit_under_3m_count'] / report['deposit_complete']) * 100 if report['deposit_complete'] > 0 else 0
+    report['deposit_avg_time'] = completed_deposits_df['total_duration_seconds'].sum() / report['deposit_complete'] if report['deposit_complete'] > 0 else 0
+
+    # -- DEPOSITS (Without Slipscan) --
+    # report['deposit_total_no_slip'] = df_without_slipscan[df_without_slipscan['tnx_type'] == 'DEPOSIT']['total_count'].sum()
+    # report['deposit_complete_no_slip'] = df_completed_without_slipscan[df_completed_without_slipscan['tnx_type'] == 'DEPOSIT']['total_count'].sum()
+    # report['deposit_under_3m_no_slip_count'] = df_completed_without_slipscan[df_completed_without_slipscan['tnx_type'] == 'DEPOSIT']['transaction_within_180s'].sum()
+    # report['deposit_pct_under_3m_no_slip'] = (report['deposit_under_3m_no_slip_count'] / report['deposit_complete_no_slip']) * 100 if report['deposit_complete_no_slip'] > 0 else 0
+
+    # -- WITHDRAWALS --
+    # NOTE: The SQL provides transaction_within_900s for the 15min mark. You may need to add a 300s column for a true 5min mark.
+    report['withdrawal_total'] = withdrawals_df['total_count'].sum()
+    report['withdrawal_complete'] = completed_withdrawals_df['total_count'].sum()
+    report['withdrawal_under_5m_count'] = completed_withdrawals_df['transaction_within_300s'].sum()
+    report['withdrawal_under_15m_count'] = completed_withdrawals_df['transaction_within_900s'].sum()
+    report['withdrawal_pct_under_5m'] = (report['withdrawal_under_5m_count'] / report['withdrawal_complete']) * 100 if report['withdrawal_complete'] > 0 else 0
+    report['withdrawal_pct_under_15m'] = (report['withdrawal_under_15m_count'] / report['withdrawal_complete']) * 100 if report['withdrawal_complete'] > 0 else 0
+    
+    # -- PAYMENT SUCCESS RATE --
+    report['total_transactions'] = dataframe['total_count'].sum()
+    report['total_complete'] = dataframe[dataframe['status'] == 'completed']['total_count'].sum()
+    report['overall_success_rate'] = (report['total_complete'] / report['total_transactions']) * 100 if report['total_transactions'] > 0 else 0
+    # report['total_transactions_no_slip'] = df_without_slipscan['total_count'].sum()
+    # report['total_complete_no_slip'] = df_without_slipscan[df_without_slipscan['status'] == 'completed']['total_count'].sum()
+    # report['success_rate_no_slip'] = (report['total_complete_no_slip'] / report['total_transactions_no_slip']) * 100 if report['total_transactions_no_slip'] > 0 else 0
+
+    # -- TIMEOUT --
+    report['total_timeout'] = dataframe[dataframe['status'] == 'timeout']['total_count'].sum()
+    report['timeout_rate'] = (report['total_timeout'] / report['total_transactions']) * 100 if report['total_transactions'] > 0 else 0
+    
+    return report
+
+def render_pmh_total_summary(title: str, report: dict) -> str:
+    """Formats the total PMH report dictionary into a Telegram message."""
+    
+    # Using triple quotes for a multi-line f-string
+    body = f"""`DEPOSITS`
+`Total      : {report.get('deposit_total', 0):,}`
+`Complete   : {report.get('deposit_complete', 0):,}`
+`<3m        : {report.get('deposit_pct_under_3m', 0):.1f}%`
+`<3m        : {report.get('deposit_under_3m_count', 0):,}`
+`Avg Time   : {report.get('deposit_avg_time', 0):.0f}s`
+
+`WITHDRAWALS`
+`<5m        : {report.get('withdrawal_pct_under_5m', 0):.1f}%`
+`<15m       : {report.get('withdrawal_pct_under_15m', 0):.1f}%`
+`Total      : {report.get('withdrawal_total', 0):,}`
+`<5m        : {report.get('withdrawal_under_5m_count', 0):,}`
+`<15m       : {report.get('withdrawal_under_15m_count', 0):,}`
+
+`PAYMENT SUCCESS RATE`
+`Success    : {report.get('overall_success_rate', 0):.1f}%`
+
+`TIMEOUT`
+`Count      : {report.get('total_timeout', 0):,}`
+`Rate       : {report.get('timeout_rate', 0):.1f}%`
+"""
+    # Use escape_md_v2 on the title only, the body is already formatted with Markdown
+    return f"*{escape_md_v2(title)}*\n{body}"
+
+# --- PMH TOTAL: country TOTAL + each group in ONE message ---
+from collections import defaultdict
+
+def _pmh_title(country: str, suffix: str = "PMH Summary"):
+    flag = FLAGS.get(country, "")
+    now, _ = get_date_range_header()
+    return escape_md_v2(f"{country} {flag} — {suffix} (up to {now} GMT+7)")
+
+def _pmh_section(title: str, df_slice: pd.DataFrame) -> tuple[str, dict]:
+    """Compute & render one PMH section; returns (rendered_text, raw_report_dict)."""
+    report = process_pmh_total(df_slice)
+    if not report:
+        return "", {}
+    text = render_pmh_total_summary(title, report)
+    return text, report
+
+async def send_pmh_total(update: Update, df: pd.DataFrame, target_date):
+    """
+    For each country in df:
+      - Compute TOTAL (all rows) → all metrics
+      - For each GROUP in that country → all metrics
+      - Send ONE message that contains TOTAL followed by every group's section
+    """
+    if df.empty:
+        await update.effective_chat.send_message("`No data.`", parse_mode=ParseMode.MARKDOWN_V2)
+        return
+
+    for country, cdf in df.groupby("country"):
+        # 1) COUNTRY TOTAL
+        country_title = escape_md_v2(f"{country} Payment Health ({target_date})")
+        total_text, total_report = _pmh_section("TOTAL", cdf)
+        # 2) GROUPS
+        groups = defaultdict(pd.DataFrame)
+        for g, gdf in cdf.groupby(cdf.get("group_name", pd.Series(["Unknown"]*len(cdf)))):
+            groups[g] = gdf
+
+        # order groups (largest activity first) — use total txns
+        def _grp_key(gdf_):
+            rep = process_pmh_total(gdf_)
+            return rep.get("total_transactions", 0) if rep else 0
+
+        ordered = sorted(groups.items(), key=lambda kv: _grp_key(kv[1]), reverse=True)
+
+        group_sections = []
+        
+        if (country != "PK") & (country != "BD"):
+            # split = "`-------------------------`"
+            for gname, gdf in ordered:
+                g_title = f"{escape_md_v2(str(gname).upper())}"
+                g_text, _ = _pmh_section(g_title, gdf)
+                print(g_text)
+                if g_text:
+                    group_sections.append("`-------------------`\n")
+                    group_sections.append(g_text)
+        else:
+            split = ""
+
+        # 3) Assemble one message (TOTAL first, then groups)
+        header = f"{country_title}"
+        parts = [header, total_text, *group_sections]
+        big_message = "\n".join([p for p in parts if p])
+
+        # 4) Respect Telegram limits and send
+        for chunk in split_table_text_customize(big_message, first_len=3000):
+            await update.effective_chat.send_message(
+                chunk,
+                parse_mode=ParseMode.MARKDOWN_V2,
+                disable_web_page_preview=False
+            )
+
+            await asyncio.sleep(1)
 
 # %%%
 def wrap_separators(s: str) -> str:
