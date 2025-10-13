@@ -12,8 +12,8 @@ from bot.config import Config
 from bot.bq_client import BigQueryClient
 from bot.table_renderer import send_apf_tables, send_channel_distribution, send_dpf_tables, send_pmh_total
 
-from bot.table_renderer import (
-    render_deposit_provider_summary, render_withdrawal_provider_summary, 
+from bot.table_renderer import (send_provider_summaries,
+    # render_deposit_provider_summary, render_withdrawal_provider_summary, 
     process_deposits, process_withdrawals,
     process_pmh_total, render_pmh_total_summary  # <-- ADD THESE
 )
@@ -119,7 +119,7 @@ class RealTimeBot:
         """
         chat = update.effective_chat
         user = update.effective_user
-        all_cmds = ["dist", "apf", "dpf"]
+        all_cmds = ["dist", "apf", "dpf", "pmh_total", "pmh_provider"]
 
         # Group policy?
         if chat and chat.type in ("group", "supergroup"):
@@ -386,11 +386,11 @@ class RealTimeBot:
                 cmds_raw = a.split("=", 1)[1]
                 cmds = [x.strip().lower() for x in cmds_raw.split(",") if x.strip()]
                 # validate against known commands to avoid typos leaking through
-                valid = {"apf", "dpf", "dist"}
+                valid = {"apf", "dpf", "dist", "pmh_total", "pmh_provider"}
                 bad = [c for c in cmds if c not in valid]
                 if bad:
                     return await update.effective_chat.send_message(
-                        f"⚠️ Unknown command(s): {', '.join(bad)}. Allowed: /apf, /dpf, /dist"
+                        f"⚠️ Unknown command(s): {', '.join(bad)}. Allowed: /apf, /dpf, /dist, /pmh_total, /pmh_provider"
                     )
                 allowed_commands = cmds if cmds else []  # [] means block all
             else:
@@ -704,6 +704,21 @@ class RealTimeBot:
                     "`/dpf <COUNTRY>`: e.g., `/dpf PH`",
                 ],
             },
+            # ✅ Add these two
+            "pmh_total": {
+                "title": "Payment Health — Total (Specific date)",
+                "lines": [
+                    "`/pmh_total A <YYYYMMDD>`",
+                    "`/pmh_total <COUNTRY> <YYYYMMDD>`",
+                ],
+            },
+            "pmh_provider": {
+                "title": "Payment Health — Providers (Specific date)",
+                "lines": [
+                    "`/pmh_provider A <YYYYMMDD>`",
+                    "`/pmh_provider <COUNTRY> <YYYYMMDD>`",
+                ],
+            },
         }
 
         # 🔑 Determine visibility by chat context
@@ -715,12 +730,31 @@ class RealTimeBot:
             )
 
         # Build help text
-        parts = [stylize("🤖 *REALTIME REPORT BOT*\n", style = "sans_bold")]
+        parts = [stylize("🤖 *REALTIME REPORT BOT*\n", style="sans_bold")]
+
+        # 1) Normal sections (skip pmh_* to avoid duplicates)
         for cmd in visible_cmds:
+            if cmd in {"pmh_total", "pmh_provider"}:
+                continue
             section = catalog[cmd]
             parts.append(f"*{section['title']}*")
             for line in section["lines"]:
                 parts.append(f"• {line}")
+            parts.append("")  # blank line
+
+        # 2) Combined Payment Health block (only if at least one is visible)
+        show_pmh_total = "pmh_total" in visible_cmds
+        show_pmh_provider = "pmh_provider" in visible_cmds
+        if show_pmh_total or show_pmh_provider:
+            parts.append("*Payment Health Report (Specific date)*")
+            if show_pmh_total:
+                parts.append(" *Total*")
+                parts.append("  ` •/pmh_total a <YYYYMMDD>`")
+                parts.append("  ` •/pmh_total <COUNTRY> <YYYYMMDD>`")
+            if show_pmh_provider:
+                parts.append("• *Providers*")
+                parts.append("  ` •/pmh_provider a <YYYYMMDD>`")
+                parts.append("  ` •/pmh_provider <COUNTRY> <YYYYMMDD>`")
             parts.append("")  # blank line
 
         # Common footer
@@ -733,15 +767,6 @@ class RealTimeBot:
 
 
     async def apf_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        # self._log_event({
-        # **self._base_payload(update),
-        # "event": "command",
-        # "command": update.effective_message.text,   # logs "/help" or "/start"
-        # })
-
-        # user = update.effective_user
-        # if not user or user.id not in self.registered_users:
-        #     return await update.effective_chat.send_message("⚠️ Please register first by contacting the admin.")
         def normalize_brand(b):
             KEEP_BRANDS = {"96G", "BLG", "WDB"}
             s = "" if b is None else str(b).strip()
@@ -802,89 +827,68 @@ class RealTimeBot:
                 f"Error: `{e}`\nLocation: {self.config.BQ_LOCATION}", 
                 parse_mode=ParseMode.MARKDOWN
             )
-    async def pmh_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # --- Shared Core Function ---
+    async def _pmh_command_core(self, update: Update, context: ContextTypes.DEFAULT_TYPE, mode: str):
         """
-        Handles the /pmh command for Payment Health reports.
-        
-        If 'A' is selected for the country, it sends a separate report
-        for each configured country.
+        Core logic for PMH commands (total/provider).
+        mode: 'total' or 'provider'
         """
-        if not await self._ensure_allowed(update, "pmh"):
+        if not await self._ensure_allowed(update, f"pmh_{mode}"):
             return
-        
+
         try:
-            if len(context.args) < 3:
+            if len(context.args) < 2:
                 return await update.effective_chat.send_message(
-                    "Usage:\n"
-                    "`/pmh provider <COUNTRY/A> <YYYYMMDD>`\n"
-                    "`/pmh total <COUNTRY/A> <YYYYMMDD>`",
+                    f"Usage:\n`/pmh_{mode} <COUNTRY/A> <YYYYMMDD>`",
                     parse_mode=ParseMode.MARKDOWN
                 )
 
-            subcommand = context.args[0].lower().strip()
-            selector = context.args[1].upper().strip()
-            date_str = context.args[2].strip()
+            selector = context.args[0].upper().strip()
+            date_str = context.args[1].strip()
 
-            if subcommand not in ["provider", "total"]:
-                return await update.effective_chat.send_message("❌ Invalid subcommand. Use `provider` or `total`.")
-
+            # Parse target date
             try:
                 target_date = _parse_target_date(date_str)  # 'YYYY-MM-DD'
-                print(target_date)
             except ValueError:
                 return await update.effective_chat.send_message("❌ Invalid date format. Use `YYYYMMDD`.")
 
-            countries_to_process = []
+            # Determine countries to process
             if selector == "A":
-                # If 'A' for All, populate the list with all allowed countries
                 countries_to_process = self.config.APF_ALLOWED
-                # await update.effective_chat.send_message(f"✅ Fetching reports for all {len(countries_to_process)} countries on {date_str}...")
             else:
                 if selector not in self.config.APF_ALLOWED:
                     return await update.effective_chat.send_message(f"❌ Unsupported country: `{selector}`.")
-                # If a single country, the list contains only that one
-                countries_to_process.append(selector)
+                countries_to_process = [selector]
 
-            # --- Loop through each country and generate a report ---
+            # --- Generate report for each country ---
             for country_code in countries_to_process:
-                country_label = country_code
-
-                # 1. Fetch data for the specific country
                 rows = await self.bq_client.execute_pmh_query(target_date, country_code)
                 if not rows:
-                    # Send a message if no data and continue to the next country
-                    await update.effective_chat.send_message(f"ℹ️ No data found for {country_label} on {target_date}.")
+                    await update.effective_chat.send_message(f"ℹ️ No data found for {country_code} on {target_date}.")
                     continue
-                
+
                 df = pd.DataFrame(rows)
-
-                # 2. Execute subcommand logic for the current country's data
-                if subcommand == "total":
-                    # title = f"{country_label} Payment Health ({target_date})"
-                    # report_data = process_pmh_total(df)
-                    # message_text = render_pmh_total_summary(title, report_data)
-                    # await update.effective_chat.send_message(message_text, parse_mode=ParseMode.MARKDOWN_V2)
-
+                if mode == "total":
                     await send_pmh_total(update, df, target_date)
+                else:
+                    await send_provider_summaries(update, df, target_date)
 
-                elif subcommand == "provider":
-                    # Process and render deposits for the current country
-                    deposit_report_df = process_deposits(df)
-                    if not deposit_report_df.empty:
-                        title = f"Deposit by Provider ({country_label} - {target_date})"
-                        message_text = render_deposit_provider_summary(title, deposit_report_df)
-                        await update.effective_chat.send_message(message_text, parse_mode=ParseMode.MARKDOWN_V2)
-
-                    # Process and render withdrawals for the current country
-                    withdrawal_report_df = process_withdrawals(df)
-                    if not withdrawal_report_df.empty:
-                        title = f"Withdrawal by Provider ({country_label} - {target_date})"
-                        message_text = render_withdrawal_provider_summary(title, withdrawal_report_df)
-                        await update.effective_chat.send_message(message_text, parse_mode=ParseMode.MARKDOWN_V2)
-        
         except Exception as e:
-            logger.exception("Error in /pmh")
-            await update.effective_chat.send_message(f"An error occurred in /pmh: `{e}`", parse_mode=ParseMode.MARKDOWN)
+            logger.exception(f"Error in /pmh_{mode}")
+            await update.effective_chat.send_message(
+                f"An error occurred in /pmh_{mode}: `{e}`", parse_mode=ParseMode.MARKDOWN
+            )
+
+
+    # --- Individual Commands ---
+    async def pmh_total_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handles /pmh_total command."""
+        await self._pmh_command_core(update, context, mode="total")
+
+
+    async def pmh_provider_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handles /pmh_provider command."""
+        await self._pmh_command_core(update, context, mode="provider")
 
     async def dist_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
@@ -1079,9 +1083,9 @@ class RealTimeBot:
             target_thread_id = thread_id if getattr(chat, "is_forum", False) else None
 
         # Validate commands
-        valid = {"apf", "dpf", "dist"}
+        valid = {"apf", "dpf", "dist", "pmh_total", "pmh_provider"}
         if not cmds_param:
-            text = ("Usage: /permission -cmds=<apf,dpf,dist|all|none>\n"
+            text = ("Usage: /permission -cmds=<apf,dpf,dist,pmh_total,pmh_provider|all|none>\n"
                     "Optional (from DM): -chat=<chat_id>")
             return await (msg.reply_text(text) if msg else
                         context.bot.send_message(target_chat_id, text, message_thread_id=target_thread_id))
@@ -1128,7 +1132,9 @@ class RealTimeBot:
         application.add_handler(CommandHandler("apf", self.apf_command))
         application.add_handler(CommandHandler("dist", self.dist_command))
         application.add_handler(CommandHandler("dpf", self.dpf_command))
-        application.add_handler(CommandHandler("pmh", self.pmh_command))
+
+        application.add_handler(CommandHandler("pmh_total", self.pmh_total_command))
+        application.add_handler(CommandHandler("pmh_provider", self.pmh_provider_command))
 
         application.add_handler(CommandHandler("admin_create_link", self.admin_create_link))
         application.add_handler(CommandHandler("permission", self.permission_command))

@@ -25,7 +25,7 @@ WITH all_transactions AS (
     `kz-dp-prod.kz_pg_to_bq_realtime.account` AS a ON f.accountId = a.id
   WHERE
     f.type IN ('deposit', 'withdraw')
-    AND f.status IN ('completed', 'errors' ,'timeout')
+    AND f.status IN ('completed', 'error' ,'timeout')
     AND DATE(DATETIME(COALESCE(f.completedAt, f.createdAt), 'Asia/Bangkok')) = @target_date
     AND (@selected_country IS NULL OR 
          (CASE 

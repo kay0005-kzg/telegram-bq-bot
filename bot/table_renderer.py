@@ -915,58 +915,66 @@ async def send_dpf_tables(update: Update, country_groups: dict[str, list[dict]],
 # -----------------------------------------------------------
 import pandas as pd
 # /pmh provider TH 20251006
-# --- Rendering Functions (No changes needed) ---
-def render_deposit_provider_summary(title: str, final_report: pd.DataFrame) -> str:
-    """Formats a DataFrame into a Telegram message for deposit summaries."""
-    providers = [escape_md_v2(str(r["Provider"])) for _, r in final_report.iterrows()]
-    counts = [str(r["#Depo"]) for _, r in final_report.iterrows()]
-    pct_3m = [str(r["%3m"]) for _, r in final_report.iterrows()]
-    timeouts = [str(r["Timeo"]) for _, r in final_report.iterrows()]
-    errors = [str(r["Error"]) for _, r in final_report.iterrows()]
+# # --- Rendering Functions (No changes needed) ---
+# def render_deposit_provider_summary(title: str, final_report: pd.DataFrame) -> str:
+#     """Formats a DataFrame into a Telegram message for deposit summaries."""
+#     providers = [escape_md_v2(str(r["Provider"])) for _, r in final_report.iterrows()]
+#     counts = [str(r["#Depo"]) for _, r in final_report.iterrows()]
+#     pct_3m = [str(r["%3m"]) for _, r in final_report.iterrows()]
+#     timeouts = [str(r["Timeo"]) for _, r in final_report.iterrows()]
+#     errors = [str(r["Error"]) for _, r in final_report.iterrows()]
 
-    w_provider = max(len("Provider"), *(len(p) for p in providers))
-    w_depo = max(len("#Depo"), *(len(c) for c in counts))
-    w_3m = max(len("%<3m"), *(len(p) for p in pct_3m))
-    w_timeout = max(len("Timeo"), *(len(t) for t in timeouts))
-    w_error = max(len("Error"), *(len(e) for e in errors))
+#     w_provider = max(len("Provider"), *(len(p) for p in providers))
+#     w_depo = max(len("#Depo"), *(len(c) for c in counts))
+#     w_3m = max(len("%<3m"), *(len(p) for p in pct_3m))
+#     w_timeout = max(len("Timeo"), *(len(t) for t in timeouts))
+#     w_error = max(len("Error"), *(len(e) for e in errors))
 
-    header = " ".join([ "Provider".ljust(w_provider), "#Depo".rjust(w_depo), "%<3m".rjust(w_3m), "Timeo".rjust(w_timeout), "Error".rjust(w_error) ])
-    lines = [header]
-    for i in range(len(final_report)):
-        lines.append(" ".join([ providers[i].ljust(w_provider), counts[i].rjust(w_depo), pct_3m[i].rjust(w_3m), timeouts[i].rjust(w_timeout), errors[i].rjust(w_error) ]))
+#     header = " ".join([ "Provider".ljust(w_provider), "#Depo".rjust(w_depo), "%<3m".rjust(w_3m), "Timeo".rjust(w_timeout), "Error".rjust(w_error) ])
+#     lines = [header]
+#     for i in range(len(final_report)):
+#         lines.append(" ".join([ providers[i].ljust(w_provider), counts[i].rjust(w_depo), pct_3m[i].rjust(w_3m), timeouts[i].rjust(w_timeout), errors[i].rjust(w_error) ]))
     
-    message_body = "\n".join(lines)
-    return f"*{escape_md_v2(title)}*\n`{message_body}`"
+#     message_body = "\n".join(lines)
+#     return f"*{escape_md_v2(title)}*\n`{message_body}`"
 
-def render_withdrawal_provider_summary(title: str, final_report: pd.DataFrame) -> str:
-    """Formats a DataFrame into a Telegram message for withdrawal summaries."""
-    providers = [escape_md_v2(str(r["Provider"])) for _, r in final_report.iterrows()]
-    counts = [str(r["Withdraw"]) for _, r in final_report.iterrows()]
-    pct_5m = [str(r["%<5m"]) for _, r in final_report.iterrows()]
-    pct_15m = [str(r["%<15m"]) for _, r in final_report.iterrows()]
+# def render_withdrawal_provider_summary(title: str, final_report: pd.DataFrame) -> str:
+#     """Formats a DataFrame into a Telegram message for withdrawal summaries."""
+#     providers = [escape_md_v2(str(r["Provider"])) for _, r in final_report.iterrows()]
+#     counts = [str(r["Withdraw"]) for _, r in final_report.iterrows()]
+#     pct_5m = [str(r["%<5m"]) for _, r in final_report.iterrows()]
+#     pct_15m = [str(r["%<15m"]) for _, r in final_report.iterrows()]
 
-    w_provider = max(len("Provider"), *(len(p) for p in providers))
-    w_withdraw = max(len("Withdraw"), *(len(c) for c in counts))
-    w_5m = max(len("%<5m"), *(len(p) for p in pct_5m))
-    w_15m = max(len("%<15m"), *(len(p) for p in pct_15m))
+#     w_provider = max(len("Provider"), *(len(p) for p in providers))
+#     w_withdraw = max(len("Withdraw"), *(len(c) for c in counts))
+#     w_5m = max(len("%<5m"), *(len(p) for p in pct_5m))
+#     w_15m = max(len("%<15m"), *(len(p) for p in pct_15m))
 
-    header = " ".join([ "Provider".ljust(w_provider), "Withdraw".rjust(w_withdraw), "%<5m".rjust(w_5m), "%<15m".rjust(w_15m) ])
-    lines = [header]
-    for i in range(len(final_report)):
-        lines.append(" ".join([ providers[i].ljust(w_provider), counts[i].rjust(w_withdraw), pct_5m[i].rjust(w_5m), pct_15m[i].rjust(w_15m) ]))
+#     header = " ".join([ "Provider".ljust(w_provider), "Withdraw".rjust(w_withdraw), "%<5m".rjust(w_5m), "%<15m".rjust(w_15m) ])
+#     lines = [header]
+#     for i in range(len(final_report)):
+#         lines.append(" ".join([ providers[i].ljust(w_provider), counts[i].rjust(w_withdraw), pct_5m[i].rjust(w_5m), pct_15m[i].rjust(w_15m) ]))
         
-    message_body = "\n".join(lines)
-    return f"*{escape_md_v2(title)}*\n`{message_body}`"
+#     message_body = "\n".join(lines)
+#     return f"*{escape_md_v2(title)}*\n`{message_body}`"
 
 # --- Pandas Processing Functions (No changes needed) ---
-import pandas as pd
-import numpy as np
-
 def process_deposits(df: pd.DataFrame) -> pd.DataFrame:
+    """Processes deposit data, now robust against list values in cells."""
+    if df.empty:
+        return pd.DataFrame()
+
+    # --- FIX: Add this block to handle lists in the data ---
+    if df['total_count'].apply(type).eq(list).any():
+        df = df.explode('total_count').copy()
+        df['total_count'] = pd.to_numeric(df['total_count'], errors='coerce').fillna(0)
+    # --- END FIX ---
+
     deposits_df = df[df['tnx_type'] == 'DEPOSIT'].copy()
     if deposits_df.empty: 
         return pd.DataFrame()
 
+    # (The rest of the function remains exactly the same)
     provider_summary = deposits_df.pivot_table(
         index='providerKey', 
         columns='status', 
@@ -974,79 +982,196 @@ def process_deposits(df: pd.DataFrame) -> pd.DataFrame:
         aggfunc='sum', 
         fill_value=0
     )
-
     fast_transactions = deposits_df[deposits_df['status'] == 'completed'].groupby('providerKey')['transaction_within_180s'].sum()
     provider_summary = provider_summary.join(fast_transactions, how='left').fillna(0)
-
-    # This line is already safe because it uses .get()
-    provider_summary['#Depo'] = provider_summary.get('completed', 0) + provider_summary.get('errors', 0) + provider_summary.get('timeout', 0)
-    
-    # Use .get(column, 0) to safely access columns that might not exist
+    provider_summary['Num'] = provider_summary.get('completed', 0) + provider_summary.get('error', 0) + provider_summary.get('timeout', 0)
     completed_counts = provider_summary.get('completed', 0)
     timeout_counts = provider_summary.get('timeout', 0)
-    error_counts = provider_summary.get('errors', 0)
-
-    # Now, calculate percentages safely. We define a simple function to avoid division by zero.
+    error_counts = provider_summary.get('error', 0)
     def safe_percent(numerator, denominator):
-        # np.divide handles division by zero gracefully, returning np.inf or 0.
         with np.errstate(divide='ignore', invalid='ignore'):
             result = np.divide(numerator, denominator) * 100
-        return np.nan_to_num(result) # Replaces NaN, inf with 0
-
+        return np.nan_to_num(result)
     provider_summary['%3m'] = safe_percent(provider_summary['transaction_within_180s'], completed_counts)
-    provider_summary['Timeo'] = safe_percent(timeout_counts, provider_summary['#Depo'])
-    provider_summary['Error'] = safe_percent(error_counts, provider_summary['#Depo'])
+    provider_summary['Timeo'] = safe_percent(timeout_counts, provider_summary['Num'])
+    provider_summary['Error'] = safe_percent(error_counts, provider_summary['Num'])
     
-    # Final formatting remains the same
-    final_report = provider_summary[['#Depo', '%3m', 'Timeo', 'Error']].reset_index().rename(columns={'providerKey': 'Provider'})
-    final_report = final_report.sort_values(by='#Depo', ascending=False)
-    final_report['#Depo'] = final_report['#Depo'].map('{:,.0f}'.format)
-    final_report['%3m'] = final_report['%3m'].map('{:.0f}%'.format)
-    final_report['Timeo'] = final_report['Timeo'].map('{:.0f}%'.format)
-    final_report['Error'] = final_report['Error'].map('{:.0f}%'.format)
-    
-    return final_report
+    # 1️⃣ Compute before formatting
+    final_report = provider_summary[['Num', '%3m', 'Timeo', 'Error']].reset_index().rename(columns={'providerKey': 'Provider'})
+    final_report = final_report.sort_values(by='Num', ascending=False)
+
+    # 2️⃣ Compute percentage before formatting (use raw numeric 'Num')
+    total_num = final_report['Num'].sum()
+    final_report['%'] = (final_report['Num'] / total_num * 100).round(0)
+
+    # 3️⃣ Apply formatting AFTER calculation
+    final_report['Num'] = final_report['Num'].map('{:,.0f}'.format)
+    final_report['%3m'] = final_report['%3m'].map('{:.0f}%'.format).str.replace("%", "")
+    final_report['%TO'] = final_report['Timeo'].map('{:.0f}%'.format).str.replace("%", "")
+    final_report['%ER'] = final_report['Error'].map('{:.0f}%'.format).str.replace("%", "")
+    final_report['%'] = final_report['%'].map('{:.0f}%'.format).str.replace("%", "")
+    final_report["Provider"] = final_report["Provider"].str.replace("-", "").str.replace("normal", "norm")
+
+    return final_report[["Provider", "Num", "%", "%3m", "%TO", "%ER"]]
+
 
 def process_withdrawals(df: pd.DataFrame) -> pd.DataFrame:
-    # (The logic from the previous answer is unchanged)
+    """Processes withdrawal data, now robust against list values in cells."""
+    if df.empty:
+        return pd.DataFrame()
+
+    # --- FIX: Add this block to handle lists in the data ---
+    if df['total_count'].apply(type).eq(list).any():
+        df = df.explode('total_count').copy()
+        df['total_count'] = pd.to_numeric(df['total_count'], errors='coerce').fillna(0)
+    # --- END FIX ---
+        
     withdrawals_df = df[df['tnx_type'] == 'WITHDRAWAL'].copy()
-    if withdrawals_df.empty: return pd.DataFrame()
-    provider_summary = withdrawals_df.groupby('providerKey').agg(Withdraw=('total_count', 'sum'))
-    completed_summary = withdrawals_df[withdrawals_df['status'] == 'completed'].groupby('providerKey').agg(CompletedWdraw=('total_count', 'sum'), FastWdraw_5m=('transaction_within_300s', 'sum'), FastWdraw_15m=('transaction_within_900s', 'sum'))
+    if withdrawals_df.empty: 
+        return pd.DataFrame()
+    
+    provider_summary = withdrawals_df.groupby('providerKey').agg(Num=('total_count', 'sum'))
+    completed_summary = withdrawals_df[withdrawals_df['status'] == 'completed'].groupby('providerKey').agg(
+        CompletedWdraw=('total_count', 'sum'), 
+        FastWdraw_5m=('transaction_within_300s', 'sum'), 
+        FastWdraw_15m=('transaction_within_900s', 'sum')
+    )
+
     provider_summary = provider_summary.join(completed_summary, how='left').fillna(0)
     provider_summary['%<5m'] = (provider_summary['FastWdraw_5m'] / provider_summary['CompletedWdraw'] * 100).replace([np.inf, -np.inf], 0).fillna(0)
     provider_summary['%<15m'] = (provider_summary['FastWdraw_15m'] / provider_summary['CompletedWdraw'] * 100).replace([np.inf, -np.inf], 0).fillna(0)
-    final_report = provider_summary[['Withdraw', '%<5m', '%<15m']].reset_index().rename(columns={'providerKey': 'Provider'})
-    final_report = final_report.sort_values(by='Withdraw', ascending=False)
-    final_report['Withdraw'] = final_report['Withdraw'].map('{:,.0f}'.format)
-    final_report['%<5m'] = final_report['%<5m'].map('{:.0f}%'.format)
-    final_report['%<15m'] = final_report['%<15m'].map('{:.0f}%'.format)
-    return final_report
+    final_report = provider_summary[['Num', '%<5m', '%<15m']].reset_index().rename(columns={'providerKey': 'Provider'})
+    final_report = final_report.sort_values(by='Num', ascending=False)
+
+    # Compute percentage before formatting (use raw numeric 'Num')
+    total_num = final_report['Num'].sum()
+    final_report['%'] = (final_report['Num'] / total_num * 100).round(0)
+
+    final_report['Num'] = final_report['Num'].map('{:,.0f}'.format)
+
+    final_report['%<5m'] = final_report['%<5m'].map('{:.0f}%'.format).str.replace("%", "")
+    final_report['%<15m'] = final_report['%<15m'].map('{:.0f}%'.format).str.replace("%", "")
+    final_report['%'] = final_report['%'].map('{:.0f}%'.format).str.replace("%", "")
+
+    final_report["Provider"] = final_report["Provider"].str.replace("-", "").str.replace("normal", "norm")
+
+
+
+    return final_report[["Provider", "Num", "%", "%<5m", "%<15m"]]
+
+
+def format_table(report_df: pd.DataFrame) -> str:
+    """
+    Formats a DataFrame into a fixed-width, monospaced table.
+    Returns just the table without code block wrapper.
+    """
+    if report_df.empty:
+        return "No data to display."
+
+    # Convert all data to strings for width calculation
+    df_str = report_df.astype(str)
+    
+    # Calculate the max width for each column
+    column_widths = {
+        col: max(len(col), df_str[col].str.len().max())
+        for col in df_str.columns
+    }
+
+    # Build the table header and rows
+    header = "  ".join(
+        col.ljust(column_widths[col]) if i == 0 else col.rjust(column_widths[col])
+        for i, col in enumerate(df_str.columns)
+    )
+    
+    table_lines = [header]
+    for _, row in df_str.iterrows():
+        parts = [
+            row[col].ljust(column_widths[col]) if i == 0 else row[col].rjust(column_widths[col])
+            for i, col in enumerate(df_str.columns)
+        ]
+        table_lines.append("  ".join(parts))
+
+    return "\n".join(table_lines)
+
+
+async def send_provider_summaries(update: Update, df: pd.DataFrame, target_date: str):
+    """
+    Processes and sends combined provider summary reports (Deposit + Withdrawal)
+    in a single message per country.
+    Only the table sections are wrapped in `code blocks`, not the entire message.
+    """
+    if df.empty:
+        await update.effective_chat.send_message(
+            "`No provider data to process.`", parse_mode=ParseMode.MARKDOWN_V2
+        )
+        return
+
+    for country, country_df in df.groupby("country"):
+        try:
+            # --- Process both deposit and withdrawal ---
+            deposit_df = process_deposits(country_df)
+            withdrawal_df = process_withdrawals(country_df)
+
+            parts = []
+            title = f"{country} Payment Health by Provider ({target_date})"
+            parts.append(f"*{escape_md_v2(title)}*")
+            parts.append("")
+
+            # --- Deposit Section ---
+            parts.append("Deposit")
+            if not deposit_df.empty:
+                parts.append("`" + format_table(deposit_df) + "`")
+            else:
+                parts.append("_No deposit data to display._")
+            parts.append("")
+
+            # --- Withdrawal Section ---
+            parts.append("Withdrawal")
+            if not withdrawal_df.empty:
+                parts.append("`" + format_table(withdrawal_df) + "`")
+            else:
+                parts.append("_No withdrawal data to display._")
+
+            # --- Combine ---
+            message_text = "\n".join(parts)
+
+            # --- Send ---
+            await update.effective_chat.send_message(
+                message_text, parse_mode=ParseMode.MARKDOWN_V2
+            )
+            await asyncio.sleep(1)
+
+        except Exception as e:
+            error_msg = f"Failed to generate report for {country}: {e}"
+            print(error_msg)
+            await update.effective_chat.send_message(
+                escape_md_v2(error_msg), parse_mode=ParseMode.MARKDOWN_V2
+            )
 
 # --- NEW: Asynchronous Sending Functions ---
 FLAGS = {"TH":"🇹🇭", "ID":"🇮🇩"}
 
-async def send_deposit_summary(update: Update, df: pd.DataFrame):
-    """Groups data by country, processes it, and sends a deposit summary for each."""
-    for country, country_df in df.groupby('country'):
-        flag = FLAGS.get(country, "")
-        title = f"Deposit by Provider ({country} {flag})"
+# async def send_deposit_summary(update: Update, df: pd.DataFrame):
+#     """Groups data by country, processes it, and sends a deposit summary for each."""
+#     for country, country_df in df.groupby('country'):
+#         flag = FLAGS.get(country, "")
+#         title = f"Deposit by Provider ({country} {flag})"
         
-        report_df = process_deposits(country_df)
-        if not report_df.empty:
-            text = render_deposit_provider_summary(title, report_df)
-            await update.effective_chat.send_message(text, parse_mode=ParseMode.MARKDOWN_V2)
+#         report_df = process_deposits(country_df)
+#         if not report_df.empty:
+#             text = render_deposit_provider_summary(title, report_df)
+#             await update.effective_chat.send_message(text, parse_mode=ParseMode.MARKDOWN_V2)
 
-async def send_withdrawal_summary(update: Update, df: pd.DataFrame):
-    """Groups data by country, processes it, and sends a withdrawal summary for each."""
-    for country, country_df in df.groupby('country'):
-        flag = FLAGS.get(country, "")
-        title = f"Withdrawal by Provider ({country} {flag})"
+# async def send_withdrawal_summary(update: Update, df: pd.DataFrame):
+#     """Groups data by country, processes it, and sends a withdrawal summary for each."""
+#     for country, country_df in df.groupby('country'):
+#         flag = FLAGS.get(country, "")
+#         title = f"Withdrawal by Provider ({country} {flag})"
         
-        report_df = process_withdrawals(country_df)
-        if not report_df.empty:
-            text = render_withdrawal_provider_summary(title, report_df)
-            await update.effective_chat.send_message(text, parse_mode=ParseMode.MARKDOWN_V2)
+#         report_df = process_withdrawals(country_df)
+#         if not report_df.empty:
+#             text = render_withdrawal_provider_summary(title, report_df)
+#             await update.effective_chat.send_message(text, parse_mode=ParseMode.MARKDOWN_V2)
 #-------------------------------------
 def process_pmh_total(dataframe: pd.DataFrame) -> dict:
     """
@@ -1098,14 +1223,18 @@ def process_pmh_total(dataframe: pd.DataFrame) -> dict:
     # -- PAYMENT SUCCESS RATE --
     report['total_transactions'] = dataframe['total_count'].sum()
     report['total_complete'] = dataframe[dataframe['status'] == 'completed']['total_count'].sum()
-    report['overall_success_rate'] = (report['total_complete'] / report['total_transactions']) * 100 if report['total_transactions'] > 0 else 0
+    
     # report['total_transactions_no_slip'] = df_without_slipscan['total_count'].sum()
     # report['total_complete_no_slip'] = df_without_slipscan[df_without_slipscan['status'] == 'completed']['total_count'].sum()
     # report['success_rate_no_slip'] = (report['total_complete_no_slip'] / report['total_transactions_no_slip']) * 100 if report['total_transactions_no_slip'] > 0 else 0
 
     # -- TIMEOUT --
     report['total_timeout'] = dataframe[dataframe['status'] == 'timeout']['total_count'].sum()
+    report['total_error'] = dataframe[dataframe['status'] == 'error']['total_count'].sum()
+
     report['timeout_rate'] = (report['total_timeout'] / report['total_transactions']) * 100 if report['total_transactions'] > 0 else 0
+    report['error_rate'] = (report['total_error'] / report['total_transactions']) * 100 if report['total_transactions'] > 0 else 0
+    report['overall_success_rate'] = (report['total_complete'] / report['total_transactions']) * 100 if report['total_transactions'] > 0 else 0
     
     return report
 
@@ -1113,26 +1242,39 @@ def render_pmh_total_summary(title: str, report: dict) -> str:
     """Formats the total PMH report dictionary into a Telegram message."""
     
     # Using triple quotes for a multi-line f-string
-    body = f"""`DEPOSITS`
-`Total      : {report.get('deposit_total', 0):,}`
-`Complete   : {report.get('deposit_complete', 0):,}`
-`<3m        : {report.get('deposit_pct_under_3m', 0):.1f}%`
-`<3m        : {report.get('deposit_under_3m_count', 0):,}`
-`Avg Time   : {report.get('deposit_avg_time', 0):.0f}s`
+#        body = f"""`DEPOSITS`
+# `Total      : {report.get('deposit_total', 0):,}`
+# `Complete   : {report.get('deposit_complete', 0):,}`
+# `<3m        : {report.get('deposit_pct_under_3m', 0):.1f}%`
+# `<3m        : {report.get('deposit_under_3m_count', 0):,}
+# `Avg Time   : {report.get('deposit_avg_time', 0):.0f}s`
 
-`WITHDRAWALS`
-`<5m        : {report.get('withdrawal_pct_under_5m', 0):.1f}%`
-`<15m       : {report.get('withdrawal_pct_under_15m', 0):.1f}%`
-`Total      : {report.get('withdrawal_total', 0):,}`
-`<5m        : {report.get('withdrawal_under_5m_count', 0):,}`
-`<15m       : {report.get('withdrawal_under_15m_count', 0):,}`
+# `WITHDRAWALS`
+# `Total      : {report.get('withdrawal_total', 0):,}`
+# `<5m        : {report.get('withdrawal_pct_under_5m', 0):.1f}%`
+# `<15m       : {report.get('withdrawal_pct_under_15m', 0):.1f}%`
+# `<5m        : {report.get('withdrawal_under_5m_count', 0):,}`
+# `<15m       : {report.get('withdrawal_under_15m_count', 0):,}`
 
-`PAYMENT SUCCESS RATE`
-`Success    : {report.get('overall_success_rate', 0):.1f}%`
+# `PAYMENT SUCCESS RATE`
+# `Success    : {report.get('overall_success_rate', 0):.1f}%`
 
-`TIMEOUT`
-`Count      : {report.get('total_timeout', 0):,}`
-`Rate       : {report.get('timeout_rate', 0):.1f}%`
+# `TIMEOUT`
+# `Count      : {report.get('total_timeout', 0):,}`
+# `Rate       : {report.get('timeout_rate', 0):.1f}%`
+# """
+    body = f"""Deposits
+`Total      | {report.get('deposit_total', 0):,}`
+`Complete   | {report.get('deposit_complete', 0):,}`
+` <3m       | {report.get('deposit_pct_under_3m', 0):.1f}%`
+Withdrawals
+`Total      | {report.get('withdrawal_total', 0):,}`
+`<5m        | {report.get('withdrawal_pct_under_5m', 0):.1f}%`
+`<15m       | {report.get('withdrawal_pct_under_15m', 0):.1f}%`
+Deposit Rates
+`Success    | {report.get('overall_success_rate', 0):.1f}%`
+`Timeut     | {report.get('timeout_rate', 0):.1f}%`
+`Error      | {report.get('error_rate', 0):.1f}%`
 """
     # Use escape_md_v2 on the title only, the body is already formatted with Markdown
     return f"*{escape_md_v2(title)}*\n{body}"
@@ -1181,7 +1323,8 @@ async def send_pmh_total(update: Update, df: pd.DataFrame, target_date):
         ordered = sorted(groups.items(), key=lambda kv: _grp_key(kv[1]), reverse=True)
 
         group_sections = []
-        
+        gname0, gdf0 = ordered[0]
+
         if (country != "PK") & (country != "BD"):
             # split = "`-------------------------`"
             for gname, gdf in ordered:
@@ -1189,13 +1332,14 @@ async def send_pmh_total(update: Update, df: pd.DataFrame, target_date):
                 g_text, _ = _pmh_section(g_title, gdf)
                 print(g_text)
                 if g_text:
-                    group_sections.append("`-------------------`\n")
+                    if gname == gname0:
+                        group_sections.append("`-------------------`")
                     group_sections.append(g_text)
         else:
             split = ""
 
         # 3) Assemble one message (TOTAL first, then groups)
-        header = f"{country_title}"
+        header = f"{country_title}\n"
         parts = [header, total_text, *group_sections]
         big_message = "\n".join([p for p in parts if p])
 
