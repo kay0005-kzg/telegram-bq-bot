@@ -1038,8 +1038,8 @@ def process_withdrawals(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     provider_summary = provider_summary.join(completed_summary, how='left').fillna(0)
-    provider_summary['%<5m'] = (provider_summary['FastWdraw_5m'] / provider_summary['CompletedWdraw'] * 100).replace([np.inf, -np.inf], 0).fillna(0)
-    provider_summary['%<15m'] = (provider_summary['FastWdraw_15m'] / provider_summary['CompletedWdraw'] * 100).replace([np.inf, -np.inf], 0).fillna(0)
+    provider_summary['%5m'] = (provider_summary['FastWdraw_5m'] / provider_summary['CompletedWdraw'] * 100).replace([np.inf, -np.inf], 0).fillna(0)
+    provider_summary['%15m'] = (provider_summary['FastWdraw_15m'] / provider_summary['CompletedWdraw'] * 100).replace([np.inf, -np.inf], 0).fillna(0)
     final_report = provider_summary[['Num', '%<5m', '%<15m']].reset_index().rename(columns={'providerKey': 'Provider'})
     final_report = final_report.sort_values(by='Num', ascending=False)
 
@@ -1049,15 +1049,15 @@ def process_withdrawals(df: pd.DataFrame) -> pd.DataFrame:
 
     final_report['Num'] = final_report['Num'].map('{:,.0f}'.format)
 
-    final_report['%<5m'] = final_report['%<5m'].map('{:.0f}%'.format).str.replace("%", "")
-    final_report['%<15m'] = final_report['%<15m'].map('{:.0f}%'.format).str.replace("%", "")
+    final_report['%5m'] = final_report['%5m'].map('{:.0f}%'.format).str.replace("%", "")
+    final_report['%15m'] = final_report['%15m'].map('{:.0f}%'.format).str.replace("%", "")
     final_report['%'] = final_report['%'].map('{:.0f}%'.format).str.replace("%", "")
 
     final_report["Provider"] = final_report["Provider"].str.replace("-", "").str.replace("normal", "norm")
 
 
 
-    return final_report[["Provider", "Num", "%", "%<5m", "%<15m"]]
+    return final_report[["Provider", "Num", "%", "%5m", "%15m"]]
 
 
 def format_table(report_df: pd.DataFrame) -> str:
@@ -1232,9 +1232,13 @@ def process_pmh_total(dataframe: pd.DataFrame) -> dict:
     report['total_timeout'] = dataframe[dataframe['status'] == 'timeout']['total_count'].sum()
     report['total_error'] = dataframe[dataframe['status'] == 'error']['total_count'].sum()
 
-    report['timeout_rate'] = (report['total_timeout'] / report['total_transactions']) * 100 if report['total_transactions'] > 0 else 0
-    report['error_rate'] = (report['total_error'] / report['total_transactions']) * 100 if report['total_transactions'] > 0 else 0
-    report['overall_success_rate'] = (report['total_complete'] / report['total_transactions']) * 100 if report['total_transactions'] > 0 else 0
+    report['timeout_rate'] = (report['total_timeout'] / report['deposit_total']) * 100 if report['total_transactions'] > 0 else 0
+    report['error_rate'] = (report['total_error'] / report['deposit_total']) * 100 if report['total_transactions'] > 0 else 0
+    report['overall_success_rate'] = (report['deposit_complete'] / report['deposit_total']) * 100 if report['total_transactions'] > 0 else 0
+    
+    # report['timeout_rate'] =  report['total_timeout']
+    # report['error_rate'] = report['total_error'] 
+    # report['overall_success_rate'] = report['deposit_complete']
     
     return report
 
@@ -1273,7 +1277,7 @@ Withdrawals
 `<15m       | {report.get('withdrawal_pct_under_15m', 0):.1f}%`
 Deposit Rates
 `Success    | {report.get('overall_success_rate', 0):.1f}%`
-`Timeut     | {report.get('timeout_rate', 0):.1f}%`
+`Timeout    | {report.get('timeout_rate', 0):.1f}%`
 `Error      | {report.get('error_rate', 0):.1f}%`
 """
     # Use escape_md_v2 on the title only, the body is already formatted with Markdown
