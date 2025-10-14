@@ -1271,17 +1271,18 @@ def render_pmh_total_summary(title: str, report: dict) -> str:
 `Total      | {report.get('deposit_total', 0):,}`
 `Complete   | {report.get('deposit_complete', 0):,}`
 ` <3m       | {report.get('deposit_pct_under_3m', 0):.1f}%`
+Deposit Rates
+`Complete   | {report.get('overall_success_rate', 0):.1f}%`
+`Timeout    | {report.get('timeout_rate', 0):.1f}%`
+`Error      | {report.get('error_rate', 0):.1f}%`
 Withdrawals
 `Total      | {report.get('withdrawal_total', 0):,}`
 `<5m        | {report.get('withdrawal_pct_under_5m', 0):.1f}%`
 `<15m       | {report.get('withdrawal_pct_under_15m', 0):.1f}%`
-Deposit Rates
-`Success    | {report.get('overall_success_rate', 0):.1f}%`
-`Timeout    | {report.get('timeout_rate', 0):.1f}%`
-`Error      | {report.get('error_rate', 0):.1f}%`
 """
     # Use escape_md_v2 on the title only, the body is already formatted with Markdown
     return f"*{escape_md_v2(title)}*\n{body}"
+
 
 # --- PMH TOTAL: country TOTAL + each group in ONE message ---
 from collections import defaultdict
