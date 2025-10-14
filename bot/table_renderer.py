@@ -1038,8 +1038,8 @@ def process_withdrawals(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     provider_summary = provider_summary.join(completed_summary, how='left').fillna(0)
-    provider_summary['%5m'] = (provider_summary['FastWdraw_5m'] / provider_summary['CompletedWdraw'] * 100).replace([np.inf, -np.inf], 0).fillna(0)
-    provider_summary['%15m'] = (provider_summary['FastWdraw_15m'] / provider_summary['CompletedWdraw'] * 100).replace([np.inf, -np.inf], 0).fillna(0)
+    provider_summary['%<5m'] = (provider_summary['FastWdraw_5m'] / provider_summary['CompletedWdraw'] * 100).replace([np.inf, -np.inf], 0).fillna(0)
+    provider_summary['%<15m'] = (provider_summary['FastWdraw_15m'] / provider_summary['CompletedWdraw'] * 100).replace([np.inf, -np.inf], 0).fillna(0)
     final_report = provider_summary[['Num', '%<5m', '%<15m']].reset_index().rename(columns={'providerKey': 'Provider'})
     final_report = final_report.sort_values(by='Num', ascending=False)
 
@@ -1049,8 +1049,8 @@ def process_withdrawals(df: pd.DataFrame) -> pd.DataFrame:
 
     final_report['Num'] = final_report['Num'].map('{:,.0f}'.format)
 
-    final_report['%5m'] = final_report['%5m'].map('{:.0f}%'.format).str.replace("%", "")
-    final_report['%15m'] = final_report['%15m'].map('{:.0f}%'.format).str.replace("%", "")
+    final_report['%5m'] = final_report['%<5m'].map('{:.0f}%'.format).str.replace("%", "")
+    final_report['%15m'] = final_report['%<15m'].map('{:.0f}%'.format).str.replace("%", "")
     final_report['%'] = final_report['%'].map('{:.0f}%'.format).str.replace("%", "")
 
     final_report["Provider"] = final_report["Provider"].str.replace("-", "").str.replace("normal", "norm")
