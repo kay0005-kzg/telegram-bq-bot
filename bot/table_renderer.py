@@ -958,6 +958,208 @@ import pandas as pd
 #     message_body = "\n".join(lines)
 #     return f"*{escape_md_v2(title)}*\n`{message_body}`"
 
+def process_deposits_by_method(df: pd.DataFrame) -> pd.DataFrame:
+    """Processes deposit data by method, robust against list values in cells."""
+    if df.empty: return pd.DataFrame()
+
+    if df['total_count'].apply(type).eq(list).any():
+        df = df.explode('total_count').copy()
+        df['total_count'] = pd.to_numeric(df['total_count'], errors='coerce').fillna(0)
+
+    deposits_df = df[df['tnx_type'] == 'DEPOSIT'].copy()
+    if deposits_df.empty: return pd.DataFrame()
+
+    provider_summary = deposits_df.pivot_table(
+        index='method', # <-- CHANGED from methodKey
+        columns='status', 
+        values='total_count', 
+        aggfunc='sum', 
+        fill_value=0
+    )
+    fast_transactions = deposits_df[deposits_df['status'] == 'completed'].groupby('method')['transaction_within_180s'].sum() # <-- CHANGED
+    provider_summary = provider_summary.join(fast_transactions, how='left').fillna(0)
+    provider_summary['Num'] = provider_summary.get('completed', 0) + provider_summary.get('error', 0) + provider_summary.get('timeout', 0)
+    completed_counts = provider_summary.get('completed', 0)
+    timeout_counts = provider_summary.get('timeout', 0)
+    error_counts = provider_summary.get('error', 0)
+    def safe_percent(numerator, denominator):
+        with np.errstate(divide='ignore', invalid='ignore'):
+            result = np.divide(numerator, denominator) * 100
+        return np.nan_to_num(result)
+    provider_summary['%3m'] = safe_percent(provider_summary['transaction_within_180s'], completed_counts)
+    provider_summary['Timeo'] = safe_percent(timeout_counts, provider_summary['Num'])
+    provider_summary['Error'] = safe_percent(error_counts, provider_summary['Num'])
+    
+    final_report = provider_summary[['Num', '%3m', 'Timeo', 'Error']].reset_index().rename(columns={'method': 'Method'}) # <-- CHANGED
+    final_report = final_report.sort_values(by='Num', ascending=False)
+
+    total_num = final_report['Num'].sum()
+    final_report['%'] = (final_report['Num'] / total_num * 100).round(0)
+
+    final_report['Num'] = final_report['Num'].map('{:,.0f}'.format)
+    final_report['%3m'] = final_report['%3m'].map('{:.0f}%'.format).str.replace("%", "")
+    final_report['%TO'] = final_report['Timeo'].map('{:.0f}%'.format).str.replace("%", "")
+    final_report['%ER'] = final_report['Error'].map('{:.0f}%'.format).str.replace("%", "")
+    final_report['%'] = final_report['%'].map('{:.0f}%'.format).str.replace("%", "")
+    final_report["Method"] = final_report["Method"].str.replace("-", "").str.replace("normal", "norm")
+
+    return final_report[["Method", "Num", "%", "%3m", "%TO", "%ER"]]
+
+
+def process_withdrawals_by_method(df: pd.DataFrame) -> pd.DataFrame:
+    """Processes withdrawal data by method, robust against list values in cells."""
+    if df.empty: return pd.DataFrame()
+
+    if df['total_count'].apply(type).eq(list).any():
+        df = df.explode('total_count').copy()
+        df['total_count'] = pd.to_numeric(df['total_count'], errors='coerce').fillna(0)
+        
+    withdrawals_df = df[df['tnx_type'] == 'WITHDRAWAL'].copy()
+    if withdrawals_df.empty: return pd.DataFrame()
+    
+    provider_summary = withdrawals_df.groupby('method').agg(Num=('total_count', 'sum')) # <-- CHANGED
+    completed_summary = withdrawals_df[withdrawals_df['status'] == 'completed'].groupby('method').agg( # <-- CHANGED
+        CompletedWdraw=('total_count', 'sum'), 
+        FastWdraw_5m=('transaction_within_300s', 'sum'), 
+        FastWdraw_15m=('transaction_within_900s', 'sum')
+    )
+
+    provider_summary = provider_summary.join(completed_summary, how='left').fillna(0)
+    provider_summary['%<5m'] = (provider_summary['FastWdraw_5m'] / provider_summary['CompletedWdraw'] * 100).replace([np.inf, -np.inf], 0).fillna(0)
+    provider_summary['%<15m'] = (provider_summary['FastWdraw_15m'] / provider_summary['CompletedWdraw'] * 100).replace([np.inf, -np.inf], 0).fillna(0)
+    final_report = provider_summary[['Num', '%<5m', '%<15m']].reset_index().rename(columns={'method': 'Method'}) # <-- CHANGED
+    final_report = final_report.sort_values(by='Num', ascending=False)
+
+    total_num = final_report['Num'].sum()
+    final_report['%'] = (final_report['Num'] / total_num * 100).round(0)
+
+    final_report['Num'] = final_report['Num'].map('{:,.0f}'.format)
+    final_report['%5m'] = final_report['%<5m'].map('{:.0f}%'.format).str.replace("%", "")
+    final_report['%15m'] = final_report['%<15m'].map('{:.0f}%'.format).str.replace("%", "")
+    final_report['%'] = final_report['%'].map('{:.0f}%'.format).str.replace("%", "")
+    final_report["Method"] = final_report["Method"].str.replace("normal", "norm")
+
+    return final_report[["Method", "Num", "%", "%5m", "%15m"]]
+
+def format_split_summary_table(title: str, subtitle: str, report_df: pd.DataFrame) -> str:
+    """
+    Formats a DataFrame into a two-part message:
+    1. A table with numerical data, indexed by '#'.
+    2. A mapping table from '#' to the full Method name.
+    """
+    if report_df.empty:
+        return ""
+
+    # Convert all data to strings for width calculation
+    df_str = report_df.astype(str)
+    
+    # Add an index column '#' to link the two tables
+    df_str.insert(0, '#', range(1, 1 + len(df_str)))
+    df_str['#'] = df_str['#'].astype(str)
+
+    # Separate the method names from the numerical data
+    method_map_df = df_str[['#', 'Method']]
+    numerical_df = df_str.drop(columns=['Method'])
+
+    # --- Part 1: Build the Numerical Table ---
+    col_widths_A = {col: max(len(col), numerical_df[col].str.len().max()) for col in numerical_df.columns}
+    header_A = "  ".join(col.rjust(col_widths_A[col]) for col in numerical_df.columns)
+    
+    table_A_lines = [header_A]
+    for _, row in numerical_df.iterrows():
+        parts = [row[col].rjust(col_widths_A[col]) for col in numerical_df.columns]
+        table_A_lines.append("  ".join(parts))
+
+    # --- Part 2: Build the Method Name Mapping Table ---
+    # First, calculate the full width of the numerical table to use for the separator
+    table_A_width = len(header_A)
+
+    # The header for the second table is now a separator line
+    header_B = "-" * table_A_width
+    
+    # Calculate the correct width for the index column for proper alignment
+    w_idx_B = method_map_df['#'].str.len().max()
+    
+    # Start the table lines with the new separator header
+    table_B_lines = [header_B]
+
+    for _, row in method_map_df.iterrows():
+        table_B_lines.append(f"{row['#'].rjust(w_idx_B)}  {row['Method']}")
+
+    # --- Combine all parts into the final message string ---
+    message_parts = [
+        f"*{escape_md_v2(title)}*",
+        f"{escape_md_v2(subtitle)}",
+        "`" + "\n".join(table_A_lines) + "`",
+        "", # Spacer line
+        "`" + "\n".join(table_B_lines) + "`"
+    ]
+    
+    return "\n".join(message_parts)
+
+
+async def send_method_summaries(update: Update, df: pd.DataFrame, target_date: str):
+    """
+    Processes and sends method summary reports, with Deposit and Withdrawal
+    in separate messages. Each message splits the table for readability.
+    """
+    if df.empty:
+        await update.effective_chat.send_message(
+            "`No method data to process.`", parse_mode=ParseMode.MARKDOWN_V2
+        )
+        return
+
+    for country, country_df in df.groupby("country"):
+        try:
+            title = f"{country} Payment Health by Method ({target_date})"
+
+            # --- 1. Process and Send Deposit Message ---
+            deposit_df = process_deposits_by_method(country_df)
+            if not deposit_df.empty:
+                deposit_text = format_split_summary_table(
+                    title=title,
+                    subtitle="Deposit",
+                    report_df=deposit_df
+                )
+                await update.effective_chat.send_message(
+                    deposit_text, parse_mode=ParseMode.MARKDOWN_V2
+                )
+                await asyncio.sleep(1)
+            else:
+                 await update.effective_chat.send_message(
+                    f"*{escape_md_v2(title)}*\n_No deposit data to display for this period._",
+                    parse_mode=ParseMode.MARKDOWN_V2
+                )
+                 await asyncio.sleep(1)
+
+
+            # --- 2. Process and Send Withdrawal Message ---
+            withdrawal_df = process_withdrawals_by_method(country_df)
+            if not withdrawal_df.empty:
+                withdrawal_text = format_split_summary_table(
+                    title=title,
+                    subtitle="Withdrawal",
+                    report_df=withdrawal_df
+                )
+                await update.effective_chat.send_message(
+                    withdrawal_text, parse_mode=ParseMode.MARKDOWN_V2
+                )
+                await asyncio.sleep(1)
+            else:
+                await update.effective_chat.send_message(
+                    f"*{escape_md_v2(title)}*\n_No withdrawal data to display for this period._",
+                    parse_mode=ParseMode.MARKDOWN_V2
+                )
+                await asyncio.sleep(1)
+
+
+        except Exception as e:
+            error_msg = f"Failed to generate method report for {country}: {e}"
+            print(error_msg)
+            await update.effective_chat.send_message(
+                escape_md_v2(error_msg), parse_mode=ParseMode.MARKDOWN_V2
+            )
+
 # --- Pandas Processing Functions (No changes needed) ---
 def process_deposits(df: pd.DataFrame) -> pd.DataFrame:
     """Processes deposit data, now robust against list values in cells."""

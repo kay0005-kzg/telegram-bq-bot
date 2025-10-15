@@ -16,6 +16,7 @@ WITH all_transactions AS (
     f.createdAt,
     f.completedAt,
     f.providerKey,
+    f.method,
     a.name AS brand_name, -- Keep brand_name for the join
     f.status,
     f.netAmount
@@ -45,6 +46,7 @@ SELECT
     WHEN t.type = 'withdraw' THEN 'WITHDRAWAL' 
   END AS tnx_type,
   t.providerKey,
+  t.method,
   t.brand_name as brand, -- Output brand_name
   t.status,
   t.country,
@@ -58,6 +60,7 @@ FROM
 GROUP BY
   tnx_type,
   providerKey,
+  method,
   brand_name, -- Group by brand_name
   status,
   country;

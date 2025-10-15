@@ -12,10 +12,7 @@ from bot.config import Config
 from bot.bq_client import BigQueryClient
 from bot.table_renderer import send_apf_tables, send_channel_distribution, send_dpf_tables, send_pmh_total
 
-from bot.table_renderer import (send_provider_summaries,
-    # render_deposit_provider_summary, render_withdrawal_provider_summary, 
-    process_deposits, process_withdrawals,
-    process_pmh_total, render_pmh_total_summary  # <-- ADD THESE
+from bot.table_renderer import (send_provider_summaries, send_method_summaries
 )
 
 import pandas as pd
@@ -25,6 +22,20 @@ from zoneinfo import ZoneInfo
 import hmac, hashlib, base64, secrets, time  # add these
 # Load environment variables
 load_dotenv()
+
+VALID_COMMANDS= {"apf", "dpf", "dist", "pmh_total", "pmh_provider", "pmh_method"}
+LIST_VALID_COMMANDS = ["apf", "dpf", "dist", "pmh_total", "pmh_provider", "pmh_method"]
+# --- Aliases ---
+PMH_ALIAS = {"pmh": ["pmh_total", "pmh_provider", "pmh_method"]}
+def _expand_aliases(cmds: list[str]) -> list[str]:
+    out = []
+    for c in cmds:
+        c = c.lower().strip()
+        if c in PMH_ALIAS:
+            out.extend(PMH_ALIAS[c])
+        else:
+            out.append(c)
+    return out
 
 # Set up logging
 logging.basicConfig(
@@ -119,7 +130,7 @@ class RealTimeBot:
         """
         chat = update.effective_chat
         user = update.effective_user
-        all_cmds = ["dist", "apf", "dpf", "pmh_total", "pmh_provider"]
+        all_cmds = LIST_VALID_COMMANDS
 
         # Group policy?
         if chat and chat.type in ("group", "supergroup"):
@@ -381,18 +392,25 @@ class RealTimeBot:
 
         # 1) Pull out flags first (so they don't end up in note)
         remaining: list[str] = []
+        
         for a in args:
             if a.startswith("-cmds="):
                 cmds_raw = a.split("=", 1)[1]
-                cmds = [x.strip().lower() for x in cmds_raw.split(",") if x.strip()]
-                # validate against known commands to avoid typos leaking through
-                valid = {"apf", "dpf", "dist", "pmh_total", "pmh_provider"}
-                bad = [c for c in cmds if c not in valid]
+                cmds_in = [x.strip().lower() for x in cmds_raw.split(",") if x.strip()]
+
+                # Expand aliases (pmh -> pmh_total, pmh_provider, pmh_method)
+                cmds_expanded = _expand_aliases(cmds_in)
+
+                # Validate against known commands after expansion
+                valid = VALID_COMMANDS  # only the concrete commands
+                bad = [c for c in cmds_expanded if c not in valid]
                 if bad:
                     return await update.effective_chat.send_message(
-                        f"⚠️ Unknown command(s): {', '.join(bad)}. Allowed: /apf, /dpf, /dist, /pmh_total, /pmh_provider"
+                        "⚠️ Unknown command(s): " + ", ".join(bad) +
+                        "\nAllowed: /apf, /dpf, /dist, /pmh_total, /pmh_provider, /pmh_method, or use 'pmh' shortcut"
                     )
-                allowed_commands = cmds if cmds else []  # [] means block all
+
+                allowed_commands = cmds_expanded if cmds_expanded else []  # [] means block all
             else:
                 remaining.append(a)
 
@@ -719,6 +737,13 @@ class RealTimeBot:
                     "`/pmh_provider <COUNTRY> <YYYYMMDD>`",
                 ],
             },
+             "pmh_method": {
+                "title": "Payment Health — Methods (Specific date)",
+                "lines": [
+                    "`/pmh_method A <YYYYMMDD>`",
+                    "`/pmh_method <COUNTRY> <YYYYMMDD>`",
+                ],
+            },
         }
 
         # 🔑 Determine visibility by chat context
@@ -732,30 +757,44 @@ class RealTimeBot:
         # Build help text
         parts = [stylize("🤖 *REALTIME REPORT BOT*\n", style="sans_bold")]
 
+
         # 1) Normal sections (skip pmh_* to avoid duplicates)
         for cmd in visible_cmds:
-            if cmd in {"pmh_total", "pmh_provider"}:
+            # ✅ FIX 1: Correctly skip only pmh_ commands
+            if cmd.startswith("pmh_"):
                 continue
-            section = catalog[cmd]
-            parts.append(f"*{section['title']}*")
-            for line in section["lines"]:
-                parts.append(f"• {line}")
-            parts.append("")  # blank line
+            
+            # Make sure the command exists in the catalog before trying to access it
+            if cmd in catalog:
+                section = catalog[cmd]
+                parts.append(f"*{section['title']}*")
+                for line in section["lines"]:
+                    parts.append(f"• {line}")
+                parts.append("") # blank line
 
         # 2) Combined Payment Health block (only if at least one is visible)
         show_pmh_total = "pmh_total" in visible_cmds
         show_pmh_provider = "pmh_provider" in visible_cmds
-        if show_pmh_total or show_pmh_provider:
+        show_pmh_method = "pmh_method" in visible_cmds
+
+        # ✅ FIX 2: Include pmh_method in the check
+        if show_pmh_total or show_pmh_provider or show_pmh_method:
             parts.append("*Payment Health Report (Specific date)*")
             if show_pmh_total:
-                parts.append(" *Total*")
-                parts.append("  ` •/pmh_total a <YYYYMMDD>`")
-                parts.append("  ` •/pmh_total <COUNTRY> <YYYYMMDD>`")
+                parts.append(" • *Total*")
+                parts.append("   `/pmh_total a <YYYYMMDD>`")
+                parts.append("   `/pmh_total <COUNTRY> <YYYYMMDD>`")
+
             if show_pmh_provider:
-                parts.append("• *Providers*")
-                parts.append("  ` •/pmh_provider a <YYYYMMDD>`")
-                parts.append("  ` •/pmh_provider <COUNTRY> <YYYYMMDD>`")
-            parts.append("")  # blank line
+                parts.append(" • *Providers*")
+                parts.append("   `/pmh_provider a <YYYYMMDD>`")
+                parts.append("   `/pmh_provider <COUNTRY> <YYYYMMDD>`")
+
+            if show_pmh_method:
+                parts.append(" • *Method*")
+                parts.append("   `/pmh_method a <YYYYMMDD>`")
+                parts.append("   `/pmh_method <COUNTRY> <YYYYMMDD>`")
+            parts.append("") # blank line
 
         # Common footer
         parts.append("*📍 Supported Countries:* TH, PH, BD, PK")
@@ -830,8 +869,8 @@ class RealTimeBot:
     # --- Shared Core Function ---
     async def _pmh_command_core(self, update: Update, context: ContextTypes.DEFAULT_TYPE, mode: str):
         """
-        Core logic for PMH commands (total/provider).
-        mode: 'total' or 'provider'
+        Core logic for PMH commands (total/provider/method).
+        mode: 'total', 'provider', or 'method'
         """
         if not await self._ensure_allowed(update, f"pmh_{mode}"):
             return
@@ -846,13 +885,11 @@ class RealTimeBot:
             selector = context.args[0].upper().strip()
             date_str = context.args[1].strip()
 
-            # Parse target date
             try:
-                target_date = _parse_target_date(date_str)  # 'YYYY-MM-DD'
+                target_date = _parse_target_date(date_str)
             except ValueError:
                 return await update.effective_chat.send_message("❌ Invalid date format. Use `YYYYMMDD`.")
 
-            # Determine countries to process
             if selector == "A":
                 countries_to_process = self.config.APF_ALLOWED
             else:
@@ -860,9 +897,10 @@ class RealTimeBot:
                     return await update.effective_chat.send_message(f"❌ Unsupported country: `{selector}`.")
                 countries_to_process = [selector]
 
-            # --- Generate report for each country ---
             for country_code in countries_to_process:
+                # --- SIMPLIFIED: Always call the same query function ---
                 rows = await self.bq_client.execute_pmh_query(target_date, country_code)
+                
                 if not rows:
                     await update.effective_chat.send_message(f"ℹ️ No data found for {country_code} on {target_date}.")
                     continue
@@ -870,8 +908,10 @@ class RealTimeBot:
                 df = pd.DataFrame(rows)
                 if mode == "total":
                     await send_pmh_total(update, df, target_date)
-                else:
+                elif mode == "provider":
                     await send_provider_summaries(update, df, target_date)
+                elif mode == "method":
+                    await send_method_summaries(update, df, target_date)
 
         except Exception as e:
             logger.exception(f"Error in /pmh_{mode}")
@@ -889,6 +929,10 @@ class RealTimeBot:
     async def pmh_provider_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handles /pmh_provider command."""
         await self._pmh_command_core(update, context, mode="provider")
+
+    async def pmh_method_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handles /pmh_provider command."""
+        await self._pmh_command_core(update, context, mode="method")
 
     async def dist_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
@@ -1083,7 +1127,7 @@ class RealTimeBot:
             target_thread_id = thread_id if getattr(chat, "is_forum", False) else None
 
         # Validate commands
-        valid = {"apf", "dpf", "dist", "pmh_total", "pmh_provider"}
+        valid = VALID_COMMANDS
         if not cmds_param:
             text = ("Usage: /permission -cmds=<apf,dpf,dist,pmh_total,pmh_provider|all|none>\n"
                     "Optional (from DM): -chat=<chat_id>")
@@ -1095,12 +1139,20 @@ class RealTimeBot:
         elif cmds_param == "none":
             allowed = []
         else:
-            parsed = [c.strip().lower() for c in cmds_param.split(",") if c.strip()]
+            parsed_in = [c.strip().lower() for c in cmds_param.split(",") if c.strip()]
+
+            # Expand aliases (pmh -> pmh_total, pmh_provider, pmh_method)
+            parsed = _expand_aliases(parsed_in)
+
             bad = [c for c in parsed if c not in valid]
             if bad:
-                text = f"⚠️ Unknown command(s): {', '.join(bad)}. Allowed: {', '.join(sorted(valid))}, or 'all'/'none'."
+                text = (
+                    "⚠️ Unknown command(s): " + ", ".join(bad) + ". "
+                    "Allowed: " + ", ".join(sorted(valid)) + ", or 'pmh' (shortcut), or 'all'/'none'."
+                )
                 return await (msg.reply_text(text) if msg else
                             context.bot.send_message(target_chat_id, text, message_thread_id=target_thread_id))
+
             allowed = sorted(set(parsed))
 
         # Save policy
@@ -1135,6 +1187,7 @@ class RealTimeBot:
 
         application.add_handler(CommandHandler("pmh_total", self.pmh_total_command))
         application.add_handler(CommandHandler("pmh_provider", self.pmh_provider_command))
+        application.add_handler(CommandHandler("pmh_method", self.pmh_method_command))
 
         application.add_handler(CommandHandler("admin_create_link", self.admin_create_link))
         application.add_handler(CommandHandler("permission", self.permission_command))
