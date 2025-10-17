@@ -1402,6 +1402,7 @@ def process_pmh_total(dataframe: pd.DataFrame) -> dict:
 
     # -- DEPOSITS --
     report['deposit_total'] = deposits_df['total_count'].sum()
+    report['deposit_percent'] = (deposits_df['total_count'].sum()/dataframe['total_count'].sum()) * 100
     report['deposit_complete'] = completed_deposits_df['total_count'].sum()
     report['deposit_under_3m_count'] = completed_deposits_df['transaction_within_180s'].sum()
     report['deposit_pct_under_3m'] = (report['deposit_under_3m_count'] / report['deposit_complete']) * 100 if report['deposit_complete'] > 0 else 0
@@ -1437,54 +1438,124 @@ def process_pmh_total(dataframe: pd.DataFrame) -> dict:
     report['timeout_rate'] = (report['total_timeout'] / report['deposit_total']) * 100 if report['total_transactions'] > 0 else 0
     report['error_rate'] = (report['total_error'] / report['deposit_total']) * 100 if report['total_transactions'] > 0 else 0
     report['overall_success_rate'] = (report['deposit_complete'] / report['deposit_total']) * 100 if report['total_transactions'] > 0 else 0
-    
+
     # report['timeout_rate'] =  report['total_timeout']
     # report['error_rate'] = report['total_error'] 
     # report['overall_success_rate'] = report['deposit_complete']
     
     return report
 
-def render_pmh_total_summary(title: str, report: dict) -> str:
-    """Formats the total PMH report dictionary into a Telegram message."""
+def render_pmh_comparison_table(total_report: dict, group_reports: list[tuple[str, dict]], title) -> str:
+    """
+    Renders a comparison table of key PMH metrics across different groups.
+
+    Args:
+        total_report: The report dictionary for the country's total.
+        group_reports: A list of tuples, where each is (group_name, group_report_dict).
+
+    Returns:
+        A formatted string containing the Markdown V2 table.
+    """
+    if not total_report or not group_reports:
+        return ""
+
+    # Define the metrics to display (Row Header, key in repwithdrawal_pct_under_5mort dict)
+    metrics = [
+        ("DP%", 'deposit_percent'),
+        ("TO%", 'timeout_rate'),
+        ("ER%", 'error_rate'),
+        ("WD% <5m", 'withdrawal_pct_under_5m'),
+        ("WD% <15m", 'withdrawal_pct_under_15m'),
+    ]
+
+    # Prepare headers and data
+    group_names = [gname for gname, _ in group_reports]
+    headers = ["Metric", "TOTAL"] + group_names
     
-    # Using triple quotes for a multi-line f-string
-#        body = f"""`DEPOSITS`
-# `Total      : {report.get('deposit_total', 0):,}`
-# `Complete   : {report.get('deposit_complete', 0):,}`
-# `<3m        : {report.get('deposit_pct_under_3m', 0):.1f}%`
-# `<3m        : {report.get('deposit_under_3m_count', 0):,}
-# `Avg Time   : {report.get('deposit_avg_time', 0):.0f}s`
+    table_data = []
+    for display_name, key in metrics:
+        row = [display_name]
+        # Add TOTAL column value
+        row.append(f"{total_report.get(key, 0):.1f}")
+        # Add value for each group
+        for _, report in group_reports:
+            row.append(f"{report.get(key, 0):.1f}")
+        table_data.append(row)
 
-# `WITHDRAWALS`
-# `Total      : {report.get('withdrawal_total', 0):,}`
-# `<5m        : {report.get('withdrawal_pct_under_5m', 0):.1f}%`
-# `<15m       : {report.get('withdrawal_pct_under_15m', 0):.1f}%`
-# `<5m        : {report.get('withdrawal_under_5m_count', 0):,}`
-# `<15m       : {report.get('withdrawal_under_15m_count', 0):,}`
+    # Calculate column widths for alignment
+    col_widths = [0] * len(headers)
+    for i, header in enumerate(headers):
+        col_widths[i] = len(header)
+    for row in table_data:
+        for i, cell in enumerate(row):
+            col_widths[i] = max(col_widths[i], len(cell))
 
-# `PAYMENT SUCCESS RATE`
-# `Success    : {report.get('overall_success_rate', 0):.1f}%`
+    # Format the table as a string
+    header_line = "  ".join(
+        headers[i].ljust(col_widths[i]) if i == 0 else headers[i].rjust(col_widths[i])
+        for i in range(len(headers))
+    )
+    # separator_line = "-|-".join("-" * width for width in col_widths)
 
-# `TIMEOUT`
-# `Count      : {report.get('total_timeout', 0):,}`
-# `Rate       : {report.get('timeout_rate', 0):.1f}%`
-# """
-    body = f"""Deposits
+    body_lines = []
+    # Iterate through the processed data to build the table body
+    for i, row in enumerate(table_data):
+        line = "  ".join(
+            row[j].ljust(col_widths[j]) if j == 0 else row[j].rjust(col_widths[j])
+            for j in range(len(row))
+        )
+        body_lines.append(line)
+
+        # ---- MODIFICATION START ----
+        # After processing the first metric (index 0), add a blank line
+        if i == 2:
+            body_lines.append("")
+        # ---- MODIFICATION END ----
+
+    full_table = "\n".join([header_line] + body_lines)
+    
+    # Add title and wrap in a code block
+    return f"{title}\n`{full_table}`"
+
+def render_pmh_total_summary(title: str, report: dict) -> str:
+    """Formats the total PMH report dictionary into a Telegram message with icons for success/timeout."""
+
+    # Extract values
+
+    success_rate = report.get("overall_success_rate", 0)
+    timeout_rate = report.get("timeout_rate", 0)
+    error_rate = report.get("error_rate", 0)
+
+    # Icon logic
+    # success_icon = "🟢" if success_rate >= 80 else ""
+
+    if "BD" in title:
+        timeout_icon = "⚠️" if timeout_rate >= 40 else ""
+
+    elif "PK" in title:
+        timeout_icon = "⚠️" if timeout_rate >= 30 else ""
+
+    else:
+        timeout_icon = "⚠️" if timeout_rate >= 20 else ""
+
+    body = f"""
+Deposits
 `Total      | {report.get('deposit_total', 0):,}`
 `Complete   | {report.get('deposit_complete', 0):,}`
-` <3m       | {report.get('deposit_pct_under_3m', 0):.1f}%`
+`<3m        | {report.get('deposit_pct_under_3m', 0):.1f}%`
+
 Deposit Rates
-`Complete   | {report.get('overall_success_rate', 0):.1f}%`
-`Timeout    | {report.get('timeout_rate', 0):.1f}%`
-`Error      | {report.get('error_rate', 0):.1f}%`
+`Complete   | {success_rate:.1f}%`
+`Timeout    | {timeout_rate:.1f}% {timeout_icon}`
+`Error      | {error_rate:.1f}%`
+
 Withdrawals
 `Total      | {report.get('withdrawal_total', 0):,}`
 `<5m        | {report.get('withdrawal_pct_under_5m', 0):.1f}%`
 `<15m       | {report.get('withdrawal_pct_under_15m', 0):.1f}%`
 """
-    # Use escape_md_v2 on the title only, the body is already formatted with Markdown
-    return f"*{escape_md_v2(title)}*\n{body}"
 
+    return f"*{escape_md_v2(title)}*{body}"
 
 # --- PMH TOTAL: country TOTAL + each group in ONE message ---
 from collections import defaultdict
@@ -1505,61 +1576,75 @@ def _pmh_section(title: str, df_slice: pd.DataFrame) -> tuple[str, dict]:
 async def send_pmh_total(update: Update, df: pd.DataFrame, target_date):
     """
     For each country in df:
-      - Compute TOTAL (all rows) → all metrics
-      - For each GROUP in that country → all metrics
-      - Send ONE message that contains TOTAL followed by every group's section
+      - Computes and sends a main report with TOTAL and individual group stats.
+      - Computes and sends a second, separate message with a comparison table.
     """
     if df.empty:
         await update.effective_chat.send_message("`No data.`", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     for country, cdf in df.groupby("country"):
-        # 1) COUNTRY TOTAL
+        # 1) --- Data Processing (same as before) ---
         country_title = escape_md_v2(f"{country} Payment Health ({target_date})")
+        country_title_2 = escape_md_v2(f"{country} Group Comparison ({target_date})")
         total_text, total_report = _pmh_section("TOTAL", cdf)
-        # 2) GROUPS
+
         groups = defaultdict(pd.DataFrame)
         for g, gdf in cdf.groupby(cdf.get("group_name", pd.Series(["Unknown"]*len(cdf)))):
             groups[g] = gdf
 
-        # order groups (largest activity first) — use total txns
         def _grp_key(gdf_):
             rep = process_pmh_total(gdf_)
             return rep.get("total_transactions", 0) if rep else 0
-
         ordered = sorted(groups.items(), key=lambda kv: _grp_key(kv[1]), reverse=True)
 
         group_sections = []
-        gname0, gdf0 = ordered[0]
+        group_reports_for_comparison = []
 
-        if (country != "PK") & (country != "BD"):
-            # split = "`-------------------------`"
-            for gname, gdf in ordered:
-                g_title = f"{escape_md_v2(str(gname).upper())}"
-                g_text, _ = _pmh_section(g_title, gdf)
-                print(g_text)
-                if g_text:
-                    if gname == gname0:
-                        group_sections.append("`-------------------`")
-                    group_sections.append(g_text)
-        else:
-            split = ""
+        if ordered:
+            gname0, _ = ordered[0]
+            if (country != "PK") and (country != "BD"):
+                for gname, gdf in ordered:
+                    g_title = f"{escape_md_v2(str(gname).upper())}"
+                    g_text, g_report = _pmh_section(g_title, gdf)
+                    if g_report:
+                        group_reports_for_comparison.append((gname.upper(), g_report))
+                    if g_text:
+                        if gname == gname0:
+                            group_sections.append("`-------------------`")
+                        group_sections.append(g_text)
+            else:
+                for gname, gdf in ordered:
+                    _, g_report = _pmh_section(gname, gdf)
+                    if g_report:
+                        group_reports_for_comparison.append((gname.upper(), g_report))
 
-        # 3) Assemble one message (TOTAL first, then groups)
+        # 2) --- Assemble and Send the MAIN Report Message ---
         header = f"{country_title}\n"
-        parts = [header, total_text, *group_sections]
-        big_message = "\n".join([p for p in parts if p])
+        main_report_parts = [header, total_text, *group_sections]
+        main_message = "\n".join([p for p in main_report_parts if p])
 
-        # 4) Respect Telegram limits and send
-        for chunk in split_table_text_customize(big_message, first_len=3000):
-            await update.effective_chat.send_message(
-                chunk,
-                parse_mode=ParseMode.MARKDOWN_V2,
-                disable_web_page_preview=False
-            )
+        if main_message:
+            for chunk in split_table_text_customize(main_message, first_len=3500):
+                await update.effective_chat.send_message(
+                    chunk,
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                    disable_web_page_preview=False
+                )
+                await asyncio.sleep(1)
 
-            await asyncio.sleep(1)
-
+        # 3) --- Assemble and Send the SEPARATE Comparison Table Message ---
+        header = f"{country_title_2}\n"
+        if total_report and group_reports_for_comparison:
+            comparison_message = render_pmh_comparison_table(total_report, group_reports_for_comparison, header)
+            if comparison_message:
+                 for chunk in split_table_text_customize(comparison_message, first_len=3500):
+                    await update.effective_chat.send_message(
+                        chunk,
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                        disable_web_page_preview=False
+                    )
+                    await asyncio.sleep(1)
 # %%%
 def wrap_separators(s: str) -> str:
     """

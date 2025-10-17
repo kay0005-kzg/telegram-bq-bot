@@ -120,25 +120,24 @@ class BigQueryClient:
             logger.error(f"Error executing /pmh query: {e}")
             raise   
         
-    # async def execute_pmh_method_query(self, target_date: str, selected_country: str | None) -> list[dict]:
-    #     """
-    #     Executes the Payment Health (by method) query for a specific date and optional country.
-    #     """
-    #     pmh_file = ".//sql//pmh_method.sql"
-    #     with open(pmh_file, "r", encoding="utf-8") as f:
-    #         sql = f.read()
+    # in bq_client.py
+    async def execute_pmh_week_query(self, as_of_date: str, selected_country: str | None) -> list[dict]:
+        week_file = ".//sql//pmh_week_function.sql"
+        with open(week_file, "r", encoding="utf-8") as f:
+            sql = f.read()
 
-    #     job_config = bigquery.QueryJobConfig(
-    #         query_parameters=[
-    #             bigquery.ScalarQueryParameter("target_date", "DATE", target_date),
-    #             bigquery.ScalarQueryParameter("selected_country", "STRING", selected_country),
-    #         ]
-    #     )
-    #     try:
-    #         query_job = self.client.query(sql, job_config=job_config)
-    #         df = query_job.to_dataframe()
-    #         df_final = df.merge(self.brand_mapping_df, how="left")
-    #         return df_final.to_dict(orient="records")
-    #     except Exception as e:
-    #         logger.error(f"Error executing /pmh_method query: {e}")
-    #         raise
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("as_of_date", "DATE", as_of_date),
+                bigquery.ScalarQueryParameter("selected_country", "STRING", selected_country),
+            ]
+        )
+        try:
+            query_job = self.client.query(sql, job_config=job_config)
+            df = query_job.to_dataframe()
+            # keep your mapping behavior (brand upper)
+            df_final = df.merge(self.brand_mapping_df, how="left")
+            return df_final.to_dict(orient="records")
+        except Exception as e:
+            logger.error(f"Error executing /pmh_week query: {e}")
+            raise
