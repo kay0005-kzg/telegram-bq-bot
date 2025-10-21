@@ -166,7 +166,7 @@ def render_apf_table_v2(country, rows, max_width=72, brand=False, widths=None, s
         x4 = max(count_separators("TTD"), *(count_separators(x) for x in ttds_all)) if ttds_all else count_separators("TTD")
 
     list_seperators = [x0 + x1, x2, x3, x4, 0]
-    print(list_seperators)
+    # print(list_seperators)
 
     def fmt_row(d, n, f, s, t):
         d = str(d)
@@ -372,7 +372,7 @@ async def send_apf_tables(update: Update, country_groups, max_width=72, max_leng
         # order groups by total NAR DESC
         groups_sorted = sorted(groups.items(), key=lambda kv: _sum_field(kv[1], "NAR"), reverse=True)
 
-        print(f"Country {country} has {len(rows)} rows in {len(groups_sorted)} groups.")
+        # print(f"Country {country} has {len(rows)} rows in {len(groups_sorted)} groups.")
 
         # one message per GROUP
         for gname, g_rows in groups_sorted:
@@ -526,8 +526,8 @@ def render_channel_distribution(country: str, rows: list[dict], topn: int = 5) -
 
     codeB = [escape_md_v2(l) for l in linesB]
     halfB = f"`{"\n".join([*codeB])}`"
-    print(halfB)
-    print("\n".join([title, *codeA]))
+    # print(halfB)
+    # print("\n".join([title, *codeA]))
     return "\n".join([title,*codeA, "", inline_code(escape_md_v2(sepA)), halfB])
     # return "\n".join([title, *headerA, *codeA, "", *sublinesB, *codeB])
 
@@ -786,10 +786,10 @@ def render_dpf_table_v2(country, rows, max_width=72, brand=False, widths=None, s
             d, a, t, w = _row_strs(r)
             line = fmt_row(d, escape_md_v2(a), escape_md_v2(t), escape_md_v2(w))
 
-            print(line)
+            # print(line)
             parts.append(wrap_separators(inline_code_line(line)))
 
-    print(parts)
+    # print(parts)
 
     return "\n".join(parts)
 
@@ -1375,6 +1375,9 @@ FLAGS = {"TH":"🇹🇭", "ID":"🇮🇩"}
 #             text = render_withdrawal_provider_summary(title, report_df)
 #             await update.effective_chat.send_message(text, parse_mode=ParseMode.MARKDOWN_V2)
 #-------------------------------------
+import pandas as pd
+from typing import List, Tuple
+
 def process_pmh_total(dataframe: pd.DataFrame) -> dict:
     """
     Calculates all metrics for the total PMH summary report.
@@ -1382,27 +1385,28 @@ def process_pmh_total(dataframe: pd.DataFrame) -> dict:
     """
     if dataframe.empty:
         return {}
-
+    
     # IMPORTANT: Define which providers or methods count as "Slipscan".
     SLIPSCAN_PROVIDERS = ['slipscan_provider'] # <-- CUSTOMIZE THIS LIST
-
+    
     report = {}
 
     # --- Pre-calculations ---
     df_completed = dataframe[dataframe['status'] == 'completed'].copy()
     df_completed['total_duration_seconds'] = df_completed['avg_diff_seconds_transaction'] * df_completed['total_count']
-    
+        
     # df_without_slipscan = dataframe[~dataframe['providerKey'].isin(SLIPSCAN_PROVIDERS)]
     # df_completed_without_slipscan = df_completed[~df_completed['providerKey'].isin(SLIPSCAN_PROVIDERS)]
-
+    
     deposits_df = dataframe[dataframe['tnx_type'] == 'DEPOSIT']
     withdrawals_df = dataframe[dataframe['tnx_type'] == 'WITHDRAWAL']
+    
     completed_deposits_df = df_completed[df_completed['tnx_type'] == 'DEPOSIT']
     completed_withdrawals_df = df_completed[df_completed['tnx_type'] == 'WITHDRAWAL']
 
     # -- DEPOSITS --
     report['deposit_total'] = deposits_df['total_count'].sum()
-    report['deposit_percent'] = (deposits_df['total_count'].sum()/dataframe['total_count'].sum()) * 100
+    report['deposit_percent'] = (deposits_df['total_count'].sum()/dataframe['total_count'].sum()) * 100 if dataframe['total_count'].sum() > 0 else 0
     report['deposit_complete'] = completed_deposits_df['total_count'].sum()
     report['deposit_under_3m_count'] = completed_deposits_df['transaction_within_180s'].sum()
     report['deposit_pct_under_3m'] = (report['deposit_under_3m_count'] / report['deposit_complete']) * 100 if report['deposit_complete'] > 0 else 0
@@ -1422,11 +1426,11 @@ def process_pmh_total(dataframe: pd.DataFrame) -> dict:
     report['withdrawal_under_15m_count'] = completed_withdrawals_df['transaction_within_900s'].sum()
     report['withdrawal_pct_under_5m'] = (report['withdrawal_under_5m_count'] / report['withdrawal_complete']) * 100 if report['withdrawal_complete'] > 0 else 0
     report['withdrawal_pct_under_15m'] = (report['withdrawal_under_15m_count'] / report['withdrawal_complete']) * 100 if report['withdrawal_complete'] > 0 else 0
-    
+        
     # -- PAYMENT SUCCESS RATE --
     report['total_transactions'] = dataframe['total_count'].sum()
     report['total_complete'] = dataframe[dataframe['status'] == 'completed']['total_count'].sum()
-    
+        
     # report['total_transactions_no_slip'] = df_without_slipscan['total_count'].sum()
     # report['total_complete_no_slip'] = df_without_slipscan[df_without_slipscan['status'] == 'completed']['total_count'].sum()
     # report['success_rate_no_slip'] = (report['total_complete_no_slip'] / report['total_transactions_no_slip']) * 100 if report['total_transactions_no_slip'] > 0 else 0
@@ -1434,88 +1438,109 @@ def process_pmh_total(dataframe: pd.DataFrame) -> dict:
     # -- TIMEOUT --
     report['total_timeout'] = dataframe[dataframe['status'] == 'timeout']['total_count'].sum()
     report['total_error'] = dataframe[dataframe['status'] == 'error']['total_count'].sum()
-
-    report['timeout_rate'] = (report['total_timeout'] / report['deposit_total']) * 100 if report['total_transactions'] > 0 else 0
-    report['error_rate'] = (report['total_error'] / report['deposit_total']) * 100 if report['total_transactions'] > 0 else 0
-    report['overall_success_rate'] = (report['deposit_complete'] / report['deposit_total']) * 100 if report['total_transactions'] > 0 else 0
-
-    # report['timeout_rate'] =  report['total_timeout']
-    # report['error_rate'] = report['total_error'] 
-    # report['overall_success_rate'] = report['deposit_complete']
     
+    # Note: Denominator changed to 'deposit_total' to match requested table logic (%TO and %ER as a fraction of deposits)
+    report['timeout_rate'] = (report['total_timeout'] / report['deposit_total']) * 100 if report['deposit_total'] > 0 else 0
+    report['error_rate'] = (report['total_error'] / report['deposit_total']) * 100 if report['deposit_total'] > 0 else 0
+    report['overall_success_rate'] = (report['deposit_complete'] / report['deposit_total']) * 100 if report['deposit_total'] > 0 else 0
+
     return report
 
-def render_pmh_comparison_table(total_report: dict, group_reports: list[tuple[str, dict]], title) -> str:
-    """
-    Renders a comparison table of key PMH metrics across different groups.
-
-    Args:
-        total_report: The report dictionary for the country's total.
-        group_reports: A list of tuples, where each is (group_name, group_report_dict).
-
-    Returns:
-        A formatted string containing the Markdown V2 table.
-    """
-    if not total_report or not group_reports:
+def _format_markdown_table(headers: List[str], data: List[List[str]]) -> str:
+    """Helper to format a list of headers and data into a monospaced table."""
+    if not data:
         return ""
-
-    # Define the metrics to display (Row Header, key in repwithdrawal_pct_under_5mort dict)
-    metrics = [
-        ("DP%", 'deposit_percent'),
-        ("TO%", 'timeout_rate'),
-        ("ER%", 'error_rate'),
-        ("WD% <5m", 'withdrawal_pct_under_5m'),
-        ("WD% <15m", 'withdrawal_pct_under_15m'),
-    ]
-
-    # Prepare headers and data
-    group_names = [gname for gname, _ in group_reports]
-    headers = ["Metric", "TOTAL"] + group_names
-    
-    table_data = []
-    for display_name, key in metrics:
-        row = [display_name]
-        # Add TOTAL column value
-        row.append(f"{total_report.get(key, 0):.1f}")
-        # Add value for each group
-        for _, report in group_reports:
-            row.append(f"{report.get(key, 0):.1f}")
-        table_data.append(row)
 
     # Calculate column widths for alignment
     col_widths = [0] * len(headers)
     for i, header in enumerate(headers):
-        col_widths[i] = len(header)
-    for row in table_data:
+        col_widths[i] = len(str(header))
+    for row in data:
         for i, cell in enumerate(row):
-            col_widths[i] = max(col_widths[i], len(cell))
+            col_widths[i] = max(col_widths[i], len(str(cell)))
 
-    # Format the table as a string
+    # Format header
     header_line = "  ".join(
-        headers[i].ljust(col_widths[i]) if i == 0 else headers[i].rjust(col_widths[i])
+        str(headers[i]).ljust(col_widths[i]) if i == 0 else str(headers[i]).rjust(col_widths[i])
         for i in range(len(headers))
     )
-    # separator_line = "-|-".join("-" * width for width in col_widths)
 
+    # Format body
     body_lines = []
-    # Iterate through the processed data to build the table body
-    for i, row in enumerate(table_data):
+    for row in data:
         line = "  ".join(
-            row[j].ljust(col_widths[j]) if j == 0 else row[j].rjust(col_widths[j])
+            str(row[j]).ljust(col_widths[j]) if j == 0 else str(row[j]).rjust(col_widths[j])
             for j in range(len(row))
         )
         body_lines.append(line)
 
-        # ---- MODIFICATION START ----
-        # After processing the first metric (index 0), add a blank line
-        if i == 2:
-            body_lines.append("")
-        # ---- MODIFICATION END ----
+    return "\n".join([header_line] + body_lines)
 
-    full_table = "\n".join([header_line] + body_lines)
-    
-    # Add title and wrap in a code block
-    return f"{title}\n`{full_table}`"
+
+def render_pmh_comparison_table(total_report: dict, group_reports: list[tuple[str, dict]], title: str) -> str:
+    """
+    Renders two comparison tables (Deposits and Withdrawals) of key PMH
+    metrics across different groups, as requested.
+
+    Args:
+        total_report: The report dictionary for the country's total.
+        group_reports: A list of tuples, where each is (group_name, group_report_dict).
+        title: The main title for the report.
+
+    Returns:
+        A formatted string containing the Markdown V2 tables.
+    """
+    if not total_report:
+        return ""
+
+    # Combine all reports into one list for easier iteration
+    # The first item is always the "TOTAL" summary
+    all_reports = [("TOTAL", total_report)] + group_reports
+
+    # --- Table 1: Deposits ---
+    deposit_headers = ["Group", "#", "Avg", "%SC", "%TO", "%ER"]
+    deposit_data = []
+
+    for name, report in all_reports:
+        if name != "TOTAL":
+            row = [
+                name,
+                f"{report.get('deposit_total', 0):,}",  # # Deposits
+                f"{report.get('deposit_avg_time', 0):.1f}s", # Avg Time
+                f"{report.get('overall_success_rate', 0):.1f}", # %Success
+                f"{report.get('timeout_rate', 0):.1f}",  # %TO
+                f"{report.get('error_rate', 0):.1f}"   # %ER
+            ]
+            deposit_data.append(row)
+
+    table1_str = _format_markdown_table(deposit_headers, deposit_data)
+
+    # --- Table 2: Withdrawals ---
+    withdrawal_headers = ["Group", "#", "%<5min", "%<15min"]
+    withdrawal_data = []
+
+    for name, report in all_reports:
+        if name != "TOTAL":
+            row = [
+                name,
+                f"{report.get('withdrawal_total', 0):,}", # # Withdrawals
+                f"{report.get('withdrawal_pct_under_5m', 0):.1f}",  # %<5min
+                f"{report.get('withdrawal_pct_under_15m', 0):.1f}" # %<15min
+            ]
+            withdrawal_data.append(row)
+
+    table2_str = _format_markdown_table(withdrawal_headers, withdrawal_data)
+
+    # --- Combine and Return ---
+    output = [
+        f"{title}",
+        "DEPOSITS",
+        f"`{table1_str}`\n",
+        "WITHDRAWALS",
+        f"`{table2_str}`"
+    ]
+
+    return "\n".join(output)
 
 def render_pmh_total_summary(title: str, report: dict) -> str:
     """Formats the total PMH report dictionary into a Telegram message with icons for success/timeout."""
