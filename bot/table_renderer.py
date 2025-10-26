@@ -2,7 +2,7 @@ from telegram import Update
 from telegram.constants import ParseMode
 from textwrap import wrap
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import asyncio
 import numpy as np
@@ -1476,7 +1476,7 @@ def _format_markdown_table(headers: List[str], data: List[List[str]]) -> str:
 
     return "\n".join([header_line] + body_lines)
 
-
+# --- render_pmh_comparison_table (Unchanged) ---
 def render_pmh_comparison_table(total_report: dict, group_reports: list[tuple[str, dict]], title: str) -> str:
     """
     Renders two comparison tables (Deposits and Withdrawals) of key PMH
@@ -1493,25 +1493,31 @@ def render_pmh_comparison_table(total_report: dict, group_reports: list[tuple[st
     if not total_report:
         return ""
 
-    # Combine all reports into one list for easier iteration
-    # The first item is always the "TOTAL" summary
-    all_reports = [("TOTAL", total_report)] + group_reports
+    # --- MODIFIED LOGIC ---
+    # Start with just the groups
+    all_reports = group_reports
+
+    # Only add the "TOTAL" line if there are 0 or 2+ groups.
+    # If len == 1, the single group *is* the total, so we omit the "TOTAL" line.
+    if len(group_reports) != 1:
+        all_reports = all_reports + [("TOTAL", total_report)]
+    # --- END MODIFICATION ---
+
 
     # --- Table 1: Deposits ---
     deposit_headers = ["Group", "#", "Avg", "%SC", "%TO", "%ER"]
     deposit_data = []
 
     for name, report in all_reports:
-        if name != "TOTAL":
-            row = [
-                name,
-                f"{report.get('deposit_total', 0):,}",  # # Deposits
-                f"{report.get('deposit_avg_time', 0):.1f}s", # Avg Time
-                f"{report.get('overall_success_rate', 0):.1f}", # %Success
-                f"{report.get('timeout_rate', 0):.1f}",  # %TO
-                f"{report.get('error_rate', 0):.1f}"   # %ER
-            ]
-            deposit_data.append(row)
+        row = [
+            name,
+            f"{report.get('deposit_total', 0):,}",  # # Deposits
+            f"{report.get('deposit_avg_time', 0):.1f}s", # Avg Time
+            f"{report.get('overall_success_rate', 0):.1f}", # %Success
+            f"{report.get('timeout_rate', 0):.1f}",  # %TO
+            f"{report.get('error_rate', 0):.1f}"  # %ER
+        ]
+        deposit_data.append(row)
 
     table1_str = _format_markdown_table(deposit_headers, deposit_data)
 
@@ -1520,150 +1526,103 @@ def render_pmh_comparison_table(total_report: dict, group_reports: list[tuple[st
     withdrawal_data = []
 
     for name, report in all_reports:
-        if name != "TOTAL":
-            row = [
-                name,
-                f"{report.get('withdrawal_total', 0):,}", # # Withdrawals
-                f"{report.get('withdrawal_pct_under_5m', 0):.1f}",  # %<5min
-                f"{report.get('withdrawal_pct_under_15m', 0):.1f}" # %<15min
-            ]
-            withdrawal_data.append(row)
+        row = [
+            name,
+            f"{report.get('withdrawal_total', 0):,}", # # Withdrawals
+            f"{report.get('withdrawal_pct_under_5m', 0):.1f}",  # %<5min
+            f"{report.get('withdrawal_pct_under_15m', 0):.1f}" # %<15min
+        ]
+        withdrawal_data.append(row)
 
     table2_str = _format_markdown_table(withdrawal_headers, withdrawal_data)
 
     # --- Combine and Return ---
     output = [
         f"{title}",
-        "DEPOSITS",
+        "*DEPOSITS*",
         f"`{table1_str}`\n",
-        "WITHDRAWALS",
+        "*WITHDRAWALS*",
         f"`{table2_str}`"
     ]
 
     return "\n".join(output)
 
-def render_pmh_total_summary(title: str, report: dict) -> str:
-    """Formats the total PMH report dictionary into a Telegram message with icons for success/timeout."""
 
-    # Extract values
+# --- Helper function (Unchanged) ---
+def _compute_pmh_report(df_slice: pd.DataFrame) -> dict:
+    """Computes one PMH report dictionary from a DataFrame slice."""
+    report = process_pmh_total(df_slice) # Assumes process_pmh_total is defined elsewhere
+    return report if report else {}
 
-    success_rate = report.get("overall_success_rate", 0)
-    timeout_rate = report.get("timeout_rate", 0)
-    error_rate = report.get("error_rate", 0)
 
-    # Icon logic
-    # success_icon = "🟢" if success_rate >= 80 else ""
-
-    if "BD" in title:
-        timeout_icon = "⚠️" if timeout_rate >= 40 else ""
-
-    elif "PK" in title:
-        timeout_icon = "⚠️" if timeout_rate >= 30 else ""
-
-    else:
-        timeout_icon = "⚠️" if timeout_rate >= 20 else ""
-
-    body = f"""
-Deposits
-`Total      | {report.get('deposit_total', 0):,}`
-`Complete   | {report.get('deposit_complete', 0):,}`
-`<3m        | {report.get('deposit_pct_under_3m', 0):.1f}%`
-
-Deposit Rates
-`Complete   | {success_rate:.1f}%`
-`Timeout    | {timeout_rate:.1f}% {timeout_icon}`
-`Error      | {error_rate:.1f}%`
-
-Withdrawals
-`Total      | {report.get('withdrawal_total', 0):,}`
-`<5m        | {report.get('withdrawal_pct_under_5m', 0):.1f}%`
-`<15m       | {report.get('withdrawal_pct_under_15m', 0):.1f}%`
-"""
-
-    return f"*{escape_md_v2(title)}*{body}"
-
-# --- PMH TOTAL: country TOTAL + each group in ONE message ---
-from collections import defaultdict
-
-def _pmh_title(country: str, suffix: str = "PMH Summary"):
-    flag = FLAGS.get(country, "")
-    now, _ = get_date_range_header()
-    return escape_md_v2(f"{country} {flag} — {suffix} (up to {now} GMT+7)")
-
-def _pmh_section(title: str, df_slice: pd.DataFrame) -> tuple[str, dict]:
-    """Compute & render one PMH section; returns (rendered_text, raw_report_dict)."""
-    report = process_pmh_total(df_slice)
-    if not report:
-        return "", {}
-    text = render_pmh_total_summary(title, report)
-    return text, report
-
+# --- Main Function (MODIFIED) ---  
 async def send_pmh_total(update: Update, df: pd.DataFrame, target_date):
     """
     For each country in df:
-      - Computes and sends a main report with TOTAL and individual group stats.
-      - Computes and sends a second, separate message with a comparison table.
+      - Computes TOTAL and individual group stats.
+      - Sends a SINGLE message with a comparison table.
     """
     if df.empty:
         await update.effective_chat.send_message("`No data.`", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
-    for country, cdf in df.groupby("country"):
-        # 1) --- Data Processing (same as before) ---
-        country_title = escape_md_v2(f"{country} Payment Health ({target_date})")
-        country_title_2 = escape_md_v2(f"{country} Group Comparison ({target_date})")
-        total_text, total_report = _pmh_section("TOTAL", cdf)
+    # --- NEW: Get current date/time in GMT+7 ---
+    gmt_plus_7 = timezone(timedelta(hours=7))
+    now_gmt7 = datetime.now(gmt_plus_7)
+    today_gmt7_str = now_gmt7.date().isoformat() # Format: 'YYYY-MM-DD'
+    current_time_str = now_gmt7.strftime('%H:%M')
+    
+    # Check if the target_date is today
+    # We use str() to handle both string and date objects
+    is_today = str(target_date) == today_gmt7_str
+    # --- END NEW ---
 
+    for country, cdf in df.groupby("country"):
+        # 1) --- Data Processing ---
+        country_title_2 = escape_md_v2(f"{country} Group Comparison ({target_date})")
+
+        # --- NEW: Conditionally build header ---
+        subtitle = ""
+        if is_today:
+            subtitle = escape_md_v2(f"(up to {current_time_str} GMT+7)")
+        
+        header = f"{country_title_2}\n"
+        if subtitle:
+            header = f"{country_title_2}\n{subtitle}\n"
+        # --- END NEW ---
+
+        # Compute the total report
+        total_report = _compute_pmh_report(cdf)
+
+        # Group data for comparison
         groups = defaultdict(pd.DataFrame)
         for g, gdf in cdf.groupby(cdf.get("group_name", pd.Series(["Unknown"]*len(cdf)))):
             groups[g] = gdf
 
+        # Helper to sort groups by transaction count
         def _grp_key(gdf_):
-            rep = process_pmh_total(gdf_)
+            rep = _compute_pmh_report(gdf_) # Use new helper
             return rep.get("total_transactions", 0) if rep else 0
+
         ordered = sorted(groups.items(), key=lambda kv: _grp_key(kv[1]), reverse=True)
 
-        group_sections = []
+        # Compute reports for each group
         group_reports_for_comparison = []
+        for gname, gdf in ordered:
+            g_report = _compute_pmh_report(gdf)
+            if g_report:
+                group_reports_for_comparison.append((str(gname).upper(), g_report))
 
-        if ordered:
-            gname0, _ = ordered[0]
-            if (country != "PK") and (country != "BD"):
-                for gname, gdf in ordered:
-                    g_title = f"{escape_md_v2(str(gname).upper())}"
-                    g_text, g_report = _pmh_section(g_title, gdf)
-                    if g_report:
-                        group_reports_for_comparison.append((gname.upper(), g_report))
-                    if g_text:
-                        if gname == gname0:
-                            group_sections.append("`-------------------`")
-                        group_sections.append(g_text)
-            else:
-                for gname, gdf in ordered:
-                    _, g_report = _pmh_section(gname, gdf)
-                    if g_report:
-                        group_reports_for_comparison.append((gname.upper(), g_report))
-
-        # 2) --- Assemble and Send the MAIN Report Message ---
-        header = f"{country_title}\n"
-        main_report_parts = [header, total_text, *group_sections]
-        main_message = "\n".join([p for p in main_report_parts if p])
-
-        if main_message:
-            for chunk in split_table_text_customize(main_message, first_len=3500):
-                await update.effective_chat.send_message(
-                    chunk,
-                    parse_mode=ParseMode.MARKDOWN_V2,
-                    disable_web_page_preview=False
-                )
-                await asyncio.sleep(1)
-
-        # 3) --- Assemble and Send the SEPARATE Comparison Table Message ---
-        header = f"{country_title_2}\n"
+        # 2) --- Assemble and Send the SEPARATE Comparison Table Message ---
+        # The 'header' variable is now already built
         if total_report and group_reports_for_comparison:
-            comparison_message = render_pmh_comparison_table(total_report, group_reports_for_comparison, header)
+            comparison_message = render_pmh_comparison_table(
+                total_report,
+                group_reports_for_comparison,
+                header  # <-- Use the new, conditional header
+            )
             if comparison_message:
-                 for chunk in split_table_text_customize(comparison_message, first_len=3500):
+                for chunk in split_table_text_customize(comparison_message, first_len=3500):
                     await update.effective_chat.send_message(
                         chunk,
                         parse_mode=ParseMode.MARKDOWN_V2,
