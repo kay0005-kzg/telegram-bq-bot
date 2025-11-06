@@ -5,7 +5,8 @@ import os
 import pandas as pd
 
 logger = logging.getLogger(__name__)
-
+# directory = "//home//ubuntu//sql"
+directory = ".//sql"
 class BigQueryClient:
     def __init__(self, config):
         self.config = config
@@ -15,7 +16,7 @@ class BigQueryClient:
         )
                 # ▼▼▼ NEW: LOAD BRAND MAPPING CSV AT STARTUP ▼▼▼
         try:
-            mapping_path = ".//sql//brand_mapping.csv"
+            mapping_path = f"{directory}//brand_mapping.csv"
             self.brand_mapping_df = pd.read_csv(mapping_path)
             # Ensure the 'brand' column is lowercase for consistent joining
             self.brand_mapping_df['brand'] = self.brand_mapping_df['brand'].str.upper()
@@ -25,7 +26,7 @@ class BigQueryClient:
             self.brand_mapping_df = pd.DataFrame() # Create empty df to avoid errors
         
     async def execute_apf_query(self, target_country):
-        apf_file = ".//sql//apf_function.sql"
+        apf_file = f"{directory}//apf_function.sql"
         with open(apf_file, "r", encoding="utf-8") as f:
             sql = f.read()
         
@@ -50,7 +51,7 @@ class BigQueryClient:
         - target_date: 'YYYY-MM-DD'
         - selected_country: STRING or None
         """
-        dist_file = ".//sql//dist_function.sql"
+        dist_file = f"{directory}//dist_function.sql"
         with open(dist_file, "r", encoding="utf-8") as f:
             sql = f.read()
 
@@ -73,7 +74,7 @@ class BigQueryClient:
         Deposit Performance (DPF): last 3 local days, capped at 'now'.
         Optional filter by country (TH/PH/BD/PK/ID) when target_country is provided.
         """
-        dpf_file = ".//sql//dpf_function.sql"
+        dpf_file = f"{directory}//dpf_function.sql"
         with open(dpf_file, "r", encoding="utf-8") as f:
             sql = f.read()
 
@@ -94,7 +95,7 @@ class BigQueryClient:
         """
         Executes the Payment Health query for a specific date and optional country.
         """
-        pmh_file = ".//sql//pmh_function.sql"
+        pmh_file = f"{directory}//pmh_function.sql"
         with open(pmh_file, "r", encoding="utf-8") as f:
             sql = f.read()
 
@@ -109,8 +110,8 @@ class BigQueryClient:
             # results = [dict(row) for row in query_job.result()]
         
             df = query_job.to_dataframe()
-            print(df.head(5))
-            print(self.brand_mapping_df.head(5))
+            # print(df.head(5))
+            # print(self.brand_mapping_df.head(5))
             df_final = df.merge(self.brand_mapping_df, how = "left")
 
             results = df_final.to_dict(orient='records')
@@ -122,7 +123,7 @@ class BigQueryClient:
         
     # in bq_client.py
     async def execute_pmh_week_query(self, as_of_date: str, selected_country: str | None) -> list[dict]:
-        week_file = ".//sql//pmh_week_function.sql"
+        week_file = f"{directory}//pmh_week_function.sql"
         with open(week_file, "r", encoding="utf-8") as f:
             sql = f.read()
 
@@ -135,8 +136,14 @@ class BigQueryClient:
         try:
             query_job = self.client.query(sql, job_config=job_config)
             df = query_job.to_dataframe()
+
             # keep your mapping behavior (brand upper)
+            df["brand"] =  df["brand"].str.upper().str.strip()
+            print(df.head(5))
+            print(self.brand_mapping_df.head(5))
             df_final = df.merge(self.brand_mapping_df, how="left")
+
+            print(df_final[df_final["group_name"].isna()]["brand"].unique())
             return df_final.to_dict(orient="records")
         except Exception as e:
             logger.error(f"Error executing /pmh_week query: {e}")

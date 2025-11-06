@@ -10,7 +10,7 @@ from pathlib import Path
 
 from bot.config import Config
 from bot.bq_client import BigQueryClient
-from bot.table_renderer import send_apf_tables, send_channel_distribution, send_dpf_tables, send_pmh_total
+from bot.table_renderer import send_apf_tables, send_channel_distribution, send_dpf_tables, send_pmh_total, send_pmh_week
 
 from bot.table_renderer import (send_provider_summaries, send_method_summaries
 )
@@ -23,10 +23,10 @@ import hmac, hashlib, base64, secrets, time  # add these
 # Load environment variables
 load_dotenv()
 
-VALID_COMMANDS= {"apf", "dpf", "dist", "pmh_total", "pmh_provider", "pmh_method"}
-LIST_VALID_COMMANDS = ["apf", "dpf", "dist", "pmh_total", "pmh_provider", "pmh_method"]
+VALID_COMMANDS= {"apf", "dpf", "dist", "pmh_total", "pmh_provider", "pmh_method", "pmh_week"}
+LIST_VALID_COMMANDS = ["apf", "dpf", "dist", "pmh_total", "pmh_provider", "pmh_method", "pmh_week"]
 # --- Aliases ---
-PMH_ALIAS = {"pmh": ["pmh_total", "pmh_provider", "pmh_method"]}
+PMH_ALIAS = {"pmh": ["pmh_total", "pmh_provider", "pmh_method", "pmh_week"]}
 def _expand_aliases(cmds: list[str]) -> list[str]:
     out = []
     for c in cmds:
@@ -925,6 +925,52 @@ class RealTimeBot:
         """Handles /pmh_total command."""
         await self._pmh_command_core(update, context, mode="total")
 
+    # Add a command method inside your BotApp class:
+    async def pmh_week_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        /pmh_week <COUNTRY/A> <YYYYMMDD>
+        Aggregates Mon -> as-of day (GMT+7). Also shows +/- % vs last week same span.
+        """
+        if not await self._ensure_allowed(update, "pmh_total"):  # reuse same permission bucket
+            return
+        try:
+            if len(context.args) < 2:
+                return await update.effective_chat.send_message(
+                    "Usage:\n`/pmh_week <COUNTRY/A> <YYYYMMDD>`",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+
+            selector = context.args[0].upper().strip()
+            date_str = context.args[1].strip()
+            try:
+                as_of_date = _parse_target_date(date_str)  # 'YYYY-MM-DD'
+            except ValueError:
+                return await update.effective_chat.send_message("❌ Invalid date format. Use `YYYYMMDD`.")
+
+            if selector == "A":
+                countries_to_process = self.config.APF_ALLOWED
+            else:
+                if selector not in self.config.APF_ALLOWED:
+                    return await update.effective_chat.send_message(f"❌ Unsupported country: `{selector}`.")
+                countries_to_process = [selector]
+
+            for country_code in countries_to_process:
+                rows = await self.bq_client.execute_pmh_week_query(as_of_date, country_code)
+                if not rows:
+                    await update.effective_chat.send_message(
+                        f"ℹ️ No weekly data for {country_code} up to {as_of_date}."
+                    )
+                    continue
+
+                df = pd.DataFrame(rows)
+                await send_pmh_week(update, df, as_of_date)
+
+        except Exception as e:
+            logger.exception("Error in /pmh_week")
+            await update.effective_chat.send_message(
+                f"An error occurred in /pmh_week: `{e}`",
+                parse_mode=ParseMode.MARKDOWN
+            )
 
     async def pmh_provider_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handles /pmh_provider command."""
@@ -1185,6 +1231,8 @@ class RealTimeBot:
         application.add_handler(CommandHandler("dist", self.dist_command))
         application.add_handler(CommandHandler("dpf", self.dpf_command))
 
+        # After building the Application in your startup:
+        application.add_handler(CommandHandler("pmh_week", self.pmh_week_command))
         application.add_handler(CommandHandler("pmh_total", self.pmh_total_command))
         application.add_handler(CommandHandler("pmh_provider", self.pmh_provider_command))
         application.add_handler(CommandHandler("pmh_method", self.pmh_method_command))

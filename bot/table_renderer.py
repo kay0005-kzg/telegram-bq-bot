@@ -1255,7 +1255,7 @@ def process_withdrawals(df: pd.DataFrame) -> pd.DataFrame:
     final_report['%15m'] = final_report['%<15m'].map('{:.0f}%'.format).str.replace("%", "")
     final_report['%'] = final_report['%'].map('{:.0f}%'.format).str.replace("%", "")
 
-    final_report["Provider"] = final_report["Provider"].str.replace("-", "").str.replace("normal", "norm")
+    final_report["Provider"] = final_report["Provider"].str.replace("-", "").str.replace("normal", "norm").str.replace("native", "nat").str.replace("direct", "dir")
 
 
 
@@ -1629,7 +1629,260 @@ async def send_pmh_total(update: Update, df: pd.DataFrame, target_date):
                         disable_web_page_preview=False
                     )
                     await asyncio.sleep(1)
-# %%%
+
+def _safe_div(n, d):
+    try:
+        n = float(n); d = float(d)
+        return (n / d) if d else 0.0
+    except Exception:
+        return 0.0
+
+def _pct(n, d):
+    return _safe_div(n, d) * 100.0
+
+def _fmt_num(x):   return f"{x:,.0f}"
+def _fmt_sec(x):   return f"{x:.0f}s"
+def _fmt_pcti(x, j = 0):  
+    if j == 0:
+        return f"{x:.0f}"  # keep without % sign to match your style
+    else:
+        return f"{x:.1f}"
+
+def _weekly_deposits_metrics(df: pd.DataFrame) -> dict:
+    """
+    df: slice for one (country x group x period) with mix of statuses, tnx_type, etc.
+    Returns the dict needed to print a row in the Deposits table.
+    """
+    d = df[df["tnx_type"] == "DEPOSIT"].copy()
+    if d.empty:
+        return dict(num=0, avg_s=0.0, sc=0.0, to=0.0, er=0.0)
+
+    # counts by status
+    total = d["total_count"].sum()
+    comp  = d.loc[d["status"] == "completed", "total_count"].sum()
+    tout  = d.loc[d["status"] == "timeout",  "total_count"].sum()
+    err   = d.loc[d["status"] == "error",    "total_count"].sum()
+
+    # avg time (use completed rows for avg)
+    comp_rows = d.loc[d["status"] == "completed"]
+    # weight the avg seconds by counts
+    w_avg = 0.0
+    if not comp_rows.empty:
+        w_avg = _safe_div(
+            (comp_rows["avg_diff_seconds_transaction"] * comp_rows["total_count"]).sum(),
+            comp
+        )
+
+    return dict(
+        num=float(total),
+        avg_s=float(w_avg),
+        sc=_pct(comp, total),
+        to=_pct(tout, total),
+        er=_pct(err,  total),
+    )
+
+def _weekly_withdrawals_metrics(df: pd.DataFrame) -> dict:
+    """
+    Returns dict for Withdrawals weekly row with:
+      - num (# of withdrawals any status)
+      - p5m (% completed within 5m)
+      - p15m (% completed within 15m)
+    """
+    w = df[df["tnx_type"] == "WITHDRAWAL"].copy()
+    if w.empty:
+        return dict(num=0, p5m=0.0, p15m=0.0)
+
+    total = w["total_count"].sum()
+    comp  = w.loc[w["status"] == "completed", "total_count"].sum()
+
+    # Sum of completed-within thresholds
+    fast5  = w.loc[w["status"] == "completed", "transaction_within_300s"].sum()
+    fast15 = w.loc[w["status"] == "completed", "transaction_within_900s"].sum()
+
+    return dict(
+        num=float(total),
+        p5m=_pct(fast5,  comp),
+        p15m=_pct(fast15, comp),
+    )
+
+def _growth_pct(cur_val, prev_val):
+    if prev_val == 0 or prev_val is None:
+        # define growth from 0 baseline as 100% if cur>0, else 0
+        return 100.0 if (cur_val or 0) > 0 else 0.0
+    return ((float(cur_val) - float(prev_val)) / float(prev_val)) * 100.0
+
+# -- Table Build Functions (MODIFIED) ---
+
+def _build_growth_table(base_headers, cur_rows, prev_rows, keys_order, group_order):
+    """
+    MODIFIED: Added 'group_order' to ensure same sorting as main table.
+    MODIFIED: Growth formatted to 0 decimal places.
+    MODIFIED: Group name is now UPPERCASE.
+    """
+    headers = base_headers[:]  # copy
+    data = []
+    
+    # CHANGED: Iterate over the pre-sorted group_order list
+    for g in group_order:
+        cur = cur_rows.get(g, {})
+        prv = prev_rows.get(g, {})
+        
+        # CHANGED: Convert group name to UPPERCASE
+        row = [str(g).upper()] 
+        
+        for k in keys_order:
+            if k != "er":
+                growth = _growth_pct(cur.get(k, 0.0), prv.get(k, 0.0))
+                # CHANGED: Format to 0 decimal places (e.g., "+10" instead of "+10.1")
+                row.append(("+" if growth >= 0 else "") + f"{growth:.0f}")
+            else:
+                growth = _growth_pct(cur.get(k, 0.0), prv.get(k, 0.0))
+                # CHANGED: Format to 0 decimal places (e.g., "+10" instead of "+10.1")
+                row.append(("+" if growth >= 0 else "") + f"{growth:.0f}")
+        data.append(row)
+    df = pd.DataFrame(data, columns=headers)
+    return format_table(df) # Assuming format_table() exists
+
+def _build_deposits_table(rows):
+    headers = ["Group", "#", "Avg", "%SC", "%TO", "%ER"]
+    data = []
+    for g, m in rows:
+        # Group name is already made uppercase here, "TOTAL" will also be uppercased.
+        g_disp = str(g).upper()
+        data.append([
+            g_disp,
+            _fmt_num(m["num"]),
+            _fmt_sec(m["avg_s"]),
+            _fmt_pcti(m["sc"]),
+            _fmt_pcti(m["to"]),
+            _fmt_pcti(m["er"], 1),
+        ])
+    df = pd.DataFrame(data, columns=headers)
+    return format_table(df) # Assuming format_table() exists
+
+def _build_withdrawals_table(rows):
+    headers = ["Group", "#", "%<5min", "%<15min"]
+    data = []
+    for g, m in rows:
+        # Group name is already made uppercase here
+        g_disp = str(g).upper()
+        data.append([
+            g_disp,
+            _fmt_num(m["num"]),
+            _fmt_pcti(m["p5m"]),
+            _fmt_pcti(m["p15m"]),
+        ])
+    df = pd.DataFrame(data, columns=headers)
+    return format_table(df) # Assuming format_table() exists
+
+# --- Main Function (MODIFIED) ---
+
+async def send_pmh_week(update: Update, df: pd.DataFrame, as_of_date: str):
+    if df.empty:
+        await update.effective_chat.send_message("`No weekly data.`", parse_mode=ParseMode.MARKDOWN_V2)
+        return
+
+    g7 = timezone(timedelta(hours=7))
+    now_g7 = datetime.now(g7)
+    now_time = now_g7.strftime("%H:%M")
+
+    as_of_dt = datetime.strptime(str(as_of_date), "%Y-%m-%d").date()
+    week_start = (as_of_dt - timedelta(days=(as_of_dt.weekday())))
+    is_today = (as_of_dt == now_g7.date())
+
+    for country, cdf in df.groupby("country"):
+        cur_df = cdf[cdf["period"] == "CUR"].copy()
+        prv_df = cdf[cdf["period"] == "PREV"].copy()
+
+        gkey = "group_name" if "group_name" in cdf.columns else "brand"
+
+        cur_dep, prv_dep, cur_wdr, prv_wdr = {}, {}, {}, {}
+        groups = sorted(set(cur_df[gkey].astype(str)).union(set(prv_df[gkey].astype(str))))
+
+        for g in groups:
+            g_cur = cur_df[cur_df[gkey].astype(str) == g]
+            g_prv = prv_df[prv_df[gkey].astype(str) == g]
+            cur_dep[g] = _weekly_deposits_metrics(g_cur)
+            prv_dep[g] = _weekly_deposits_metrics(g_prv)
+            cur_wdr[g] = _weekly_withdrawals_metrics(g_cur)
+            prv_wdr[g] = _weekly_withdrawals_metrics(g_prv)
+
+        # These sorted lists control the order for BOTH main and growth tables
+        dep_order = sorted(groups, key=lambda x: cur_dep.get(x, {}).get("num", 0.0), reverse=True)
+        wdr_order = sorted(groups, key=lambda x: cur_wdr.get(x, {}).get("num", 0.0), reverse=True)
+
+        # === CHANGED: Add TOTAL row logic ===
+        # Only add a TOTAL row if there is more than one group
+        if len(groups) > 1:
+            # Calculate metrics for the entire period (all groups)
+            # We can re-use the metrics functions on the period dataframes
+            total_cur_dep = _weekly_deposits_metrics(cur_df)
+            total_prv_dep = _weekly_deposits_metrics(prv_df)
+            total_cur_wdr = _weekly_withdrawals_metrics(cur_df)
+            total_prv_wdr = _weekly_withdrawals_metrics(prv_df)
+         
+            # Add to the metric dictionaries
+            cur_dep["TOTAL"] = total_cur_dep
+            prv_dep["TOTAL"] = total_prv_dep
+            cur_wdr["TOTAL"] = total_cur_wdr
+            prv_wdr["TOTAL"] = total_prv_wdr
+            
+            # Add "TOTAL" to the end of the sorted order lists
+            dep_order.append("TOTAL")
+            wdr_order.append("TOTAL")
+        # === End of TOTAL row logic ===
+
+        # These row builders will now include "TOTAL" if it was added to dep_order/wdr_order
+        dep_rows = [(g, cur_dep[g]) for g in dep_order]
+        wdr_rows = [(g, cur_wdr[g]) for g in wdr_order]
+
+        deposits_table     = _build_deposits_table(dep_rows)
+        withdrawals_table  = _build_withdrawals_table(wdr_rows)
+
+        dep_growth_table = _build_growth_table(
+            base_headers=["Group", "#", "Avg", "%SC", "%TO", "%ER"],
+            cur_rows=cur_dep, prev_rows=prv_dep,
+            keys_order=["num","avg_s","sc","to","er"],
+            group_order=dep_order  # This list now includes "TOTAL" if needed
+        )
+        wdr_growth_table = _build_growth_table(
+            base_headers=["Group", "#", "%<5min", "%<15min"],
+            cur_rows=cur_wdr, prev_rows=prv_wdr,
+            keys_order=["num","p5m","p15m"],
+            group_order=wdr_order  # This list now includes "TOTAL" if needed
+        )
+
+        hdr_title = escape_md_v2(f"{country} Weekly Report")
+        if is_today:
+            hdr_range = escape_md_v2(f"(from {week_start.isoformat()} to today {now_time} GMT+7)")
+        else:
+            hdr_range = escape_md_v2(f"(from {week_start.isoformat()} to {as_of_dt.isoformat()})")
+
+        # --- ONE message for Deposits: main + growth ---
+        msg_deposits = "\n".join([
+            f"*{hdr_title}*",
+            hdr_range,
+            "",
+            escape_md_v2("DEPOSITS WEEKLY REPORT"),
+           f"`{deposits_table}`",
+            "",
+            escape_md_v2("DEPOSITS +/- % (vs. same days last week)"),
+            f"`{dep_growth_table}`",
+        ])
+        await update.effective_chat.send_message(msg_deposits, parse_mode=ParseMode.MARKDOWN_V2)
+
+       # --- ONE message for Withdrawals: main + growth ---
+        msg_withdrawals = "\n".join([
+            f"*{hdr_title}*",
+            hdr_range,
+            "",
+            escape_md_v2("WITHDRAWALS"),
+            f"`{withdrawals_table}`",
+            "",
+            escape_md_v2("WITHDRAWALS +/- % (vs. same days last week)"),
+            f"`{wdr_growth_table}`",
+        ])
+        await update.effective_chat.send_message(msg_withdrawals, parse_mode=ParseMode.MARKDOWN_V2)# %%%
 def wrap_separators(s: str) -> str:
     """
     Replace '-' and ',' in the string with MarkdownV2-safe backtick-wrapped versions.

@@ -29,13 +29,21 @@ base AS (
     f.providerKey,
     f.method,
     a.name AS brand_name,
-    f.status,
+    CASE
+      WHEN f.status = 'errors' THEN 'error'
+    ELSE f.status END AS status,
     f.netAmount,
-    DATE(DATETIME(COALESCE(f.completedAt, f.createdAt), tz)) AS local_date
+    -- DATE(DATETIME(COALESCE(f.completedAt, f.createdAt), tz)) AS local_date
+    DATE(DATETIME(f.createdAt, CASE WHEN f.reqCurrency = 'BDT' THEN '+06:00' -- UTC+6
+        WHEN f.reqCurrency = 'PKR' THEN '+05:00' -- UTC+5
+        WHEN f.reqCurrency = 'PHP' THEN '+08:00' -- UTC+8
+        WHEN f.reqCurrency = 'THB' THEN '+07:00' -- UTC+7
+        -- WHEN f.reqCurrency = 'IDR' THEN '+07:00' -- (Asia/Jakarta is UTC+7)
+        ELSE NULL END)) AS local_date
   FROM `kz-dp-prod.kz_pg_to_bq_realtime.ext_funding_tx` AS f
   LEFT JOIN `kz-dp-prod.kz_pg_to_bq_realtime.account`      AS a ON f.accountId = a.id
   WHERE f.type IN ('deposit','withdraw')
-    AND f.status IN ('completed','error','timeout')
+    AND f.status IN ('completed','error','timeout', 'errors')
     AND (@selected_country IS NULL OR
          (CASE
             WHEN f.reqCurrency = 'THB' THEN 'TH'
