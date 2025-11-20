@@ -130,7 +130,8 @@ def count_separators(s: str) -> int:
 current_time, _ = get_date_range_header()
 
 def render_apf_table_v2(country, rows, max_width=72, brand=False, widths=None, separators=None):
-    FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩"}
+    # --- AFTER ---
+    FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩", "BR":"🇧🇷"}
     flag = FLAGS.get(country, "")
     
     # --- group by brand ---
@@ -432,8 +433,9 @@ def _to_percent_number(val) -> float:
         return 0.0
     return x if had_pct else (x * 100.0 if x <= 1.5 else x)
 
-FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩"}
-CURRENCIES = {"PH":"PHP","TH":"THB","BD":"BDT","PK":"PKR","ID":"IDR"}
+# --- AFTER ---
+FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩", "BR":"🇧🇷"}
+CURRENCIES = {"PH":"PHP","TH":"THB","BD":"BDT","PK":"PKR","ID":"IDR", "BR":"BRL"}
 
 def render_channel_distribution(country: str, rows: list[dict], topn: int = 5) -> str:
     FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩"}
@@ -635,9 +637,9 @@ def render_dpf_table_v2(country, rows, max_width=72, brand=False, widths=None, s
     # escape_md_v2, stylize, inline_code_line, wrap_separators, backtick_with_trailing_spaces
     # _num_to_float, _fmt_commas0, _fmt_pct_int, _shrink_date, _sum_field,
     # count_separators, get_date_range_header
-
-    FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩"}
-    CURRENCIES = {"TH":"THB","PH":"PHP","BD":"BDT","PK":"PKR","ID":"IDR"}
+    # --- AFTER ---
+    FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩", "BR":"🇧🇷"}
+    CURRENCIES = {"TH":"THB","PH":"PHP","BD":"BDT","PK":"PKR","ID":"IDR", "BR":"BRL"}
     flag     = FLAGS.get(country, "")
     currency = CURRENCIES.get(country, "")
 
@@ -1351,7 +1353,7 @@ async def send_provider_summaries(update: Update, df: pd.DataFrame, target_date:
             )
 
 # --- NEW: Asynchronous Sending Functions ---
-FLAGS = {"TH":"🇹🇭", "ID":"🇮🇩"}
+FLAGS = {"TH":"🇹🇭","PH":"🇵🇭","BD":"🇧🇩","PK":"🇵🇰","ID":"🇮🇩", "BR":"🇧🇷"}
 
 # async def send_deposit_summary(update: Update, df: pd.DataFrame):
 #     """Groups data by country, processes it, and sends a deposit summary for each."""
@@ -1513,8 +1515,8 @@ def render_pmh_comparison_table(total_report: dict, group_reports: list[tuple[st
             name,
             f"{report.get('deposit_total', 0):,}",  # # Deposits
             f"{report.get('deposit_avg_time', 0):.1f}s", # Avg Time
-            f"{report.get('overall_success_rate', 0):.1f}", # %Success
-            f"{report.get('timeout_rate', 0):.1f}",  # %TO
+            f"{report.get('overall_success_rate', 0):.0f}", # %Success
+            f"{report.get('timeout_rate', 0):.0f}",  # %TO
             f"{report.get('error_rate', 0):.1f}"  # %ER
         ]
         deposit_data.append(row)
@@ -1776,6 +1778,20 @@ def _build_withdrawals_table(rows):
     return format_table(df) # Assuming format_table() exists
 
 # --- Main Function (MODIFIED) ---
+def week_of_month(dt: datetime, week_start: int = 0) -> int:
+    """
+    Week number within the month (1..5/6).
+    week_start: 0=Mon, 6=Sun. Uses calendar-style counting:
+      - Find the first day of the month
+      - Offset by the weekday of that first day
+      - Integer-divide the (offset + day-1) by 7
+    """
+    first = dt.replace(day=1)
+    offset = (first.weekday() - week_start) % 7
+    return 1 + (offset + dt.day - 1) // 7
+
+def month_week_label(dt: datetime, week_start: int = 0) -> str:
+    return f"Week {week_of_month(dt, week_start)} - {dt.strftime('%b %y')}"
 
 async def send_pmh_week(update: Update, df: pd.DataFrame, as_of_date: str):
     if df.empty:
@@ -1852,7 +1868,10 @@ async def send_pmh_week(update: Update, df: pd.DataFrame, as_of_date: str):
             group_order=wdr_order  # This list now includes "TOTAL" if needed
         )
 
-        hdr_title = escape_md_v2(f"{country} Weekly Report")
+        # Build "Week N Mon YY" label (weeks start Monday = 0)
+        week_label = month_week_label(datetime.combine(as_of_dt, datetime.min.time()), week_start=0)
+
+        hdr_title = escape_md_v2(f"{country} Report - {week_label}")
         if is_today:
             hdr_range = escape_md_v2(f"(from {week_start.isoformat()} to today {now_time} GMT+7)")
         else:
@@ -1863,10 +1882,12 @@ async def send_pmh_week(update: Update, df: pd.DataFrame, as_of_date: str):
             f"*{hdr_title}*",
             hdr_range,
             "",
-            escape_md_v2("DEPOSITS WEEKLY REPORT"),
+            # escape_md_v2("DEPOSITS WEEKLY REPORT"),
+           stylize(f"*{escape_md_v2("DEPOSITS REPORT")}*", style="sans_bold"),
            f"`{deposits_table}`",
             "",
-            escape_md_v2("DEPOSITS +/- % (vs. same days last week)"),
+            stylize(f"*{escape_md_v2("DEPOSITS +/- %")}*", style="sans_bold") + escape_md_v2(" (vs. same days last week)"),
+            # escape_md_v2("DEPOSITS +/- % (vs. same days last week)"),
             f"`{dep_growth_table}`",
         ])
         await update.effective_chat.send_message(msg_deposits, parse_mode=ParseMode.MARKDOWN_V2)
@@ -1876,10 +1897,12 @@ async def send_pmh_week(update: Update, df: pd.DataFrame, as_of_date: str):
             f"*{hdr_title}*",
             hdr_range,
             "",
-            escape_md_v2("WITHDRAWALS"),
+            # escape_md_v2("WITHDRAWALS"),
+            stylize(f"*{escape_md_v2("WITHDRAWALS REPORT")}*", style="sans_bold"),
             f"`{withdrawals_table}`",
             "",
-            escape_md_v2("WITHDRAWALS +/- % (vs. same days last week)"),
+            stylize(f"*{escape_md_v2("WITHDRAWALS +/- %")}*", style="sans_bold") + escape_md_v2(" (vs. same days last week)"),
+            # escape_md_v2("WITHDRAWALS +/- % (vs. same days last week)"),
             f"`{wdr_growth_table}`",
         ])
         await update.effective_chat.send_message(msg_withdrawals, parse_mode=ParseMode.MARKDOWN_V2)# %%%

@@ -797,7 +797,7 @@ class RealTimeBot:
             parts.append("") # blank line
 
         # Common footer
-        parts.append("*📍 Supported Countries:* TH, PH, BD, PK")
+        parts.append("*📍 Supported Countries:* TH, PH, BD, PK, BR")
         parts.append("*🕒 Timezone:* GMT+7\n")
         parts.append("_Please reduce your font size if the table appears misaligned_")
 
@@ -1086,7 +1086,7 @@ class RealTimeBot:
         try:
             if not context.args:
                 return await update.effective_chat.send_message(
-                    "Usage: `/dpf a` or `/dpf <COUNTRY>` (TH, PH, BD, PK)",
+                    "Usage: `/dpf a` or `/dpf <COUNTRY>` (TH, PH, BD, PK, BR)",
                     parse_mode=ParseMode.MARKDOWN,
                 )
 

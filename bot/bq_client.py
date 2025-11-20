@@ -115,6 +115,7 @@ class BigQueryClient:
             df_final = df.merge(self.brand_mapping_df, how = "left")
 
             results = df_final.to_dict(orient='records')
+            print(df_final.head(10))
             return results
         except Exception as e:
             # CORRECTED LOG MESSAGE

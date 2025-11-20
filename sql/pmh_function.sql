@@ -11,6 +11,7 @@ WITH all_transactions AS (
       WHEN f.reqCurrency = 'BDT' THEN 'BD'
       WHEN f.reqCurrency = 'PKR' THEN 'PK'
       WHEN f.reqCurrency = 'IDR' THEN 'ID'
+      WHEN f.reqCurrency = 'BRL' THEN 'BR'
       ELSE NULL
     END AS country,
     f.createdAt,
@@ -36,13 +37,15 @@ WITH all_transactions AS (
             WHEN f.reqCurrency = 'PHP' THEN 'PH'
             WHEN f.reqCurrency = 'BDT' THEN 'BD'
             WHEN f.reqCurrency = 'PKR' THEN 'PK'
+            WHEN f.reqCurrency = 'BRL' THEN 'BR'
             -- WHEN f.reqCurrency = 'IDR' THEN 'ID'
             ELSE NULL 
           END) = @selected_country)
-    AND DATE(DATETIME(f.createdAt, CASE WHEN f.reqCurrency = 'BDT' THEN '+06:00' -- UTC+6
+    AND DATE(DATETIME(f.insertedAt, CASE WHEN f.reqCurrency = 'BDT' THEN '+06:00' -- UTC+6
         WHEN f.reqCurrency = 'PKR' THEN '+05:00' -- UTC+5
         WHEN f.reqCurrency = 'PHP' THEN '+08:00' -- UTC+8
         WHEN f.reqCurrency = 'THB' THEN '+07:00' -- UTC+7
+        WHEN f.reqCurrency = 'BRL' THEN '-03:00' -- (America/Sao_Paulo is UTC-3)
         -- WHEN f.reqCurrency = 'IDR' THEN '+07:00' -- (Asia/Jakarta is UTC+7)
         ELSE NULL END)) = @target_date
   QUALIFY ROW_NUMBER() OVER (PARTITION BY f.id ORDER BY f.updatedAt DESC) = 1

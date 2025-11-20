@@ -26,6 +26,7 @@ map_country AS (
       WHEN f.reqCurrency = 'BDT' THEN 'BD'
       WHEN f.reqCurrency = 'PKR' THEN 'PK'
       WHEN f.reqCurrency = 'IDR' THEN 'ID'
+      WHEN f.reqCurrency = 'BRL' THEN 'BR'
       ELSE NULL
     END AS country
   FROM `kz-dp-prod.kz_pg_to_bq_realtime.ext_funding_tx` f
@@ -39,6 +40,7 @@ map_country AS (
       WHEN f.reqCurrency = 'BDT' THEN 'BD'
       WHEN f.reqCurrency = 'PKR' THEN 'PK'
       WHEN f.reqCurrency = 'IDR' THEN 'ID'
+      WHEN f.reqCurrency = 'BRL' THEN 'BR'
       ELSE NULL
     END = @target_country
   -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
@@ -78,6 +80,7 @@ total_deposit AS (
       WHEN f.reqCurrency = 'BDT' THEN 'BD'
       WHEN f.reqCurrency = 'PKR' THEN 'PK'
       WHEN f.reqCurrency = 'IDR' THEN 'ID'
+      WHEN f.reqCurrency = 'BRL' THEN 'BR'
       ELSE NULL
     END AS country,
     f.createdAt
@@ -96,6 +99,7 @@ total_deposit AS (
         WHEN f.reqCurrency = 'BDT' THEN 'BD'
         WHEN f.reqCurrency = 'PKR' THEN 'PK'
         WHEN f.reqCurrency = 'IDR' THEN 'ID'
+        WHEN f.reqCurrency = 'BRL' THEN 'BR'
         ELSE NULL
       END = @target_country
     )

@@ -9,8 +9,8 @@ WITH params AS (
 -- Pull only deposits in the last 3 local days (UTC-pruned)
 base AS (
   SELECT
-    DATE(DATETIME(f.completedAt, p.tz)) AS local_date,    -- e.g. 2025-08-29
-    TIME(DATETIME(f.completedAt, p.tz)) AS local_time,    -- time in Asia/Bangkok
+    DATE(DATETIME(f.insertedAt, p.tz)) AS local_date,    -- e.g. 2025-08-29
+    TIME(DATETIME(f.insertedAt, p.tz)) AS local_time,    -- time in Asia/Bangkok
     f.netAmount,
     f.netCurrency,
     f.reqCurrency,
@@ -22,6 +22,7 @@ base AS (
       WHEN f.reqCurrency = 'BDT' THEN 'BD'
       WHEN f.reqCurrency = 'PKR' THEN 'PK'
       WHEN f.reqCurrency = 'IDR' THEN 'ID'
+      WHEN f.reqCurrency = 'BRL' THEN 'BR'
       ELSE NULL
     END AS country
   FROM `kz-dp-prod.kz_pg_to_bq_realtime.ext_funding_tx` AS f
@@ -42,6 +43,7 @@ base AS (
             WHEN f.reqCurrency = 'BDT' THEN 'BD'
             WHEN f.reqCurrency = 'PKR' THEN 'PK'
             WHEN f.reqCurrency = 'IDR' THEN 'ID'
+            WHEN f.reqCurrency = 'BRL' THEN 'BR'
             ELSE NULL
           END = @target_country)
     ----------------------------------------------------------------------

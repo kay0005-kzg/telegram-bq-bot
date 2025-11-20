@@ -16,7 +16,7 @@ WITH deposit_raw AS (
     f.type = 'deposit'
     AND f.status = 'completed'
     -- Keep only rows whose local (BKK) calendar date == @target_date
-    AND DATE(DATETIME(f.completedAt, 'Asia/Bangkok')) = @target_date
+    AND DATE(DATETIME(f.insertedAt, 'Asia/Bangkok')) = @target_date
   -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
   -- ADDED THIS LINE TO REMOVE DUPLICATES --
   QUALIFY ROW_NUMBER() OVER (PARTITION BY f.id ORDER BY f.updatedAt DESC) = 1
@@ -30,6 +30,7 @@ normalized AS (
       WHEN reqCurrency = 'BDT' THEN 'BD'
       WHEN reqCurrency = 'PKR' THEN 'PK'
       WHEN reqCurrency = 'IDR' THEN 'ID'
+      WHEN reqCurrency = 'BRL' THEN 'BR'
       ELSE NULL
     END AS country,
     COALESCE(method, 'UNKNOWN') AS method,
