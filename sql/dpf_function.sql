@@ -32,8 +32,8 @@ base AS (
   WHERE f.type   = 'deposit'
     AND f.status = 'completed'
     -- UTC bounds covering [today-2 00:00 .. today+1 00:00) local
-    AND f.completedAt >= TIMESTAMP(DATETIME(DATE_SUB(p.today_date, INTERVAL 2 DAY), TIME '00:00:00'), p.tz)
-    AND f.completedAt <  TIMESTAMP(DATETIME(DATE_ADD(p.today_date,  INTERVAL 1 DAY), TIME '00:00:00'), p.tz)
+    AND f.insertedAt >= TIMESTAMP(DATETIME(DATE_SUB(p.today_date, INTERVAL 2 DAY), TIME '00:00:00'), p.tz)
+    AND f.insertedAt <  TIMESTAMP(DATETIME(DATE_ADD(p.today_date,  INTERVAL 1 DAY), TIME '00:00:00'), p.tz)
     ----------------------------------------------------------------------
     -- OPTIMIZATION: Filter by country at the earliest possible step.
     AND (@target_country IS NULL OR
