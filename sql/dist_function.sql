@@ -49,6 +49,8 @@ grouped AS (
     AVG(net_amount) AS avg_native
   FROM
     normalized
+  WHERE
+    (@selected_country IS NULL OR country = @selected_country)
   GROUP BY
     country,
     method,
