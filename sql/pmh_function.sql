@@ -1,6 +1,3 @@
--- pmh_function.sql (Updated)
-
--- Optimized Query
 WITH all_transactions AS (
   -- STEP 1: Scan the base table
   SELECT
@@ -18,7 +15,7 @@ WITH all_transactions AS (
     f.completedAt,
     f.providerKey,
     f.method,
-    a.name AS brand_name, -- Keep brand_name for the join
+    a.name AS brand_name,
     CASE
       WHEN f.status = 'errors' THEN 'error'
       ELSE f.status END AS status,
@@ -30,7 +27,17 @@ WITH all_transactions AS (
   WHERE
     f.type IN ('deposit', 'withdraw')
     AND f.status IN ('completed', 'error' ,'timeout', 'errors')
-    -- AND DATE(DATETIME(COALESCE(f.completedAt, f.createdAt), 'Asia/Bangkok')) = @target_date
+    
+    --------------------------------------------------------------------------
+    -- ✅ PARTITION PRUNING (The Optimization)
+    -- We select a window wide enough to cover all your specific Timezones.
+    -- Range: [Target - 8h] (Start of PHP) to [Target + 1d + 3h] (End of BRL)
+    --------------------------------------------------------------------------
+    AND f.insertedAt >= TIMESTAMP_SUB(TIMESTAMP(@target_date), INTERVAL 8 HOUR) 
+    AND f.insertedAt <  TIMESTAMP_ADD(TIMESTAMP_ADD(TIMESTAMP(@target_date), INTERVAL 1 DAY), INTERVAL 3 HOUR)
+    --------------------------------------------------------------------------
+
+    -- 1. Country Filter
     AND (@selected_country IS NULL OR 
          (CASE 
             WHEN f.reqCurrency = 'THB' THEN 'TH'
@@ -38,18 +45,21 @@ WITH all_transactions AS (
             WHEN f.reqCurrency = 'BDT' THEN 'BD'
             WHEN f.reqCurrency = 'PKR' THEN 'PK'
             WHEN f.reqCurrency = 'BRL' THEN 'BR'
-            -- WHEN f.reqCurrency = 'IDR' THEN 'ID'
             ELSE NULL 
           END) = @selected_country)
-    AND DATE(DATETIME(f.insertedAt, CASE WHEN f.reqCurrency = 'BDT' THEN '+06:00' -- UTC+6
+    
+    -- 2. Precise Date Filter (This now runs on only ~2 days of data instead of All-Time)
+    AND DATE(DATETIME(f.insertedAt, CASE 
+        WHEN f.reqCurrency = 'BDT' THEN '+06:00' -- UTC+6
         WHEN f.reqCurrency = 'PKR' THEN '+05:00' -- UTC+5
         WHEN f.reqCurrency = 'PHP' THEN '+08:00' -- UTC+8
         WHEN f.reqCurrency = 'THB' THEN '+07:00' -- UTC+7
-        WHEN f.reqCurrency = 'BRL' THEN '-03:00' -- (America/Sao_Paulo is UTC-3)
-        -- WHEN f.reqCurrency = 'IDR' THEN '+07:00' -- (Asia/Jakarta is UTC+7)
+        WHEN f.reqCurrency = 'BRL' THEN '-03:00' -- UTC-3
         ELSE NULL END)) = @target_date
+        
   QUALIFY ROW_NUMBER() OVER (PARTITION BY f.id ORDER BY f.updatedAt DESC) = 1
 )
+
 -- STEP 2: Perform aggregation
 SELECT
   CASE 
@@ -58,7 +68,7 @@ SELECT
   END AS tnx_type,
   t.providerKey,
   t.method,
-  t.brand_name as brand, -- Output brand_name
+  t.brand_name as brand,
   t.status,
   t.country,
   AVG(TIMESTAMP_DIFF(t.completedAt, t.createdAt, SECOND)) AS avg_diff_seconds_transaction,
@@ -72,6 +82,6 @@ GROUP BY
   tnx_type,
   providerKey,
   method,
-  brand_name, -- Group by brand_name
+  brand_name,
   status,
   country;

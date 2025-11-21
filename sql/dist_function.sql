@@ -1,7 +1,3 @@
--- Params:
--- @target_date DATE          -- e.g. DATE '2025-09-01' (local "reporting" date)
--- @selected_country STRING    -- e.g. 'TH' (nullable)
-
 WITH deposit_raw AS (
   SELECT
     f.completedAt,
@@ -15,12 +11,14 @@ WITH deposit_raw AS (
   WHERE
     f.type = 'deposit'
     AND f.status = 'completed'
-    -- Keep only rows whose local (BKK) calendar date == @target_date
-    AND DATE(DATETIME(f.insertedAt, 'Asia/Bangkok')) = @target_date
-  -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
-  -- ADDED THIS LINE TO REMOVE DUPLICATES --
+    -------------------------------------------------------
+    -- ✅ OPTIMIZED FILTER: Enables Partition Pruning
+    -------------------------------------------------------
+    AND f.insertedAt >= TIMESTAMP(DATETIME(@target_date, TIME '00:00:00'), 'Asia/Bangkok')
+    AND f.insertedAt <  TIMESTAMP(DATETIME(DATE_ADD(@target_date, INTERVAL 1 DAY), TIME '00:00:00'), 'Asia/Bangkok')
+    -------------------------------------------------------
+  -- DEDUPLICATION
   QUALIFY ROW_NUMBER() OVER (PARTITION BY f.id ORDER BY f.updatedAt DESC) = 1
-  -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 ),
 normalized AS (
   SELECT
@@ -51,8 +49,6 @@ grouped AS (
     AVG(net_amount) AS avg_native
   FROM
     normalized
-  WHERE
-    (@selected_country IS NULL OR country = @selected_country)
   GROUP BY
     country,
     method,
